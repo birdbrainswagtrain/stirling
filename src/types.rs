@@ -1,6 +1,8 @@
 
 use std::{rc::Rc, cell::RefCell};
 
+use syn::BinOp;
+
 use crate::{hir_expr::Expr, hir_items::{Scope, try_path_to_name}};
 
 
@@ -10,8 +12,8 @@ pub struct TypeRegistry{}
 
 #[derive(Debug)]
 pub struct Signature{
-    inputs: Vec<Type>,
-    output: Type
+    pub inputs: Vec<Type>,
+    pub output: Type
 }
 
 impl Signature{
@@ -42,6 +44,11 @@ pub enum Type{
     Int(TypeInt)
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TypeInt{
+    I32
+}
+
 impl Type {
     pub fn from_syn(syn_ty: &syn::Type, scope: &Scope) -> Type {
         match syn_ty {
@@ -66,14 +73,22 @@ impl Type {
         }
     }
 
-    pub fn resolve(expr: &Expr, types: &Vec<Type>, old_type: Type) -> Type {
-        match expr {
-            _ => panic!("can't resolve type for: {:?}",expr)
+    pub fn is_numeric_primitive(&self) -> bool {
+        match self {
+            Type::IntUnknown | Type::Int(_) => true,
+            _ => false
         }
     }
-}
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum TypeInt{
-    I32
+    pub fn more_specific_than(&self, other: Type) -> bool {
+        if *self == other {
+            false
+        } else {
+            if *self == Type::Unknown {
+                false
+            } else {
+                true
+            }
+        }
+    }
 }

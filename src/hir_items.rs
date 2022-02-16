@@ -56,17 +56,14 @@ impl Function {
         })
     }
 
-    pub fn code(&mut self) -> &FuncCode {
+    pub fn code(&self) -> &FuncCode {
+        let sig = self.sig();
 
-        /*if self.hir_code.is_none() {
-            let mut code = FuncCode::from_syn(&self.syn_fn);
-            code.type_check(&self.syn_fn.sig);
-
-            self.hir_code = Some(code);
-        }
-        
-        self.hir_code.as_ref().unwrap()*/
-        panic!("stop");
+        self.code.get_or_init(|| {
+            let scope_rc = self.parent_scope.upgrade().unwrap();
+            let scope = scope_rc.borrow();
+            FuncCode::from_syn(&self.syn_fn, sig, &scope)
+        })
     }
 }
 

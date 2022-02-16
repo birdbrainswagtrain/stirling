@@ -18,7 +18,8 @@ fn main() {
     if let Item::Fn(func) = scope.get(&ItemName::Value("add".into())).unwrap() {
         //let code = func.code();
         //code.print();
-        let x = func.sig();
-        println!("{:?}",x);
+        let x = func.code();
+        x.print();
+        //println!("{:?}",x);
     }
 }

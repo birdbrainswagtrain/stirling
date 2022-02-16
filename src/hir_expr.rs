@@ -1,55 +1,157 @@
+
 use crate::hir_items::{Scope, Item, ItemName};
-use crate::types::Type;
+use crate::types::{Type, Signature};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-
 pub struct FuncCode{
     body: Block,
-    exprs: Vec<Expr>,
-    types: Option<Vec<Type>>
+    exprs: Vec<ExprInfo>
+}
+
+pub struct ExprInfo{
+    expr: Expr,
+    ty: Type,
+    op_info: OpInfo
+}
+
+impl ExprInfo{
+    pub fn new(expr: Expr, ty: Type) -> ExprInfo {
+        ExprInfo{expr, ty, op_info: OpInfo::None}
+    }
+}
+
+#[derive(Debug,PartialEq)]
+enum OpInfo{
+    None,
+    //PrimitiveOp
 }
 
 impl FuncCode {
-    pub fn from_syn(syn_fn: &syn::ItemFn) -> Self {
+    pub fn from_syn(syn_fn: &syn::ItemFn, sig: &Signature, scope: &Scope) -> Self {
         let mut code = FuncCode{
             body: Default::default(),
-            exprs: vec!(),
-            types: None
+            exprs: vec!()
         };
-        code.body.add_args(&mut code.exprs, &syn_fn.sig);
+        code.body.add_args(&mut code.exprs, &syn_fn.sig, sig);
         code.body.add_from_syn(&mut code.exprs, &syn_fn.block);
+
+        code.check(sig);
+
         code
     }
 
-    pub fn type_check(&mut self, syn_sig: &syn::Signature) {
-        if self.types.is_none() {
-            let types = vec!(Type::Unknown;self.exprs.len());
+    pub fn check(&mut self, sig: &Signature) {
 
-            let mut mutated = true;
+        let mut mutated = true;
 
-            while mutated {
-                mutated = false;
+        while mutated {
+            println!("pass...");
+            mutated = false;
 
-                for i in 0..types.len() {
-                    let ty = types[i];
-                    if ty.is_unknown() {
-                        let new_ty = Type::resolve(&self.exprs[i], &types, ty);
-                        if ty != new_ty {
-                            mutated = true;
-                        }
+            for i in 0..self.exprs.len() {
+                let expr_info = &self.exprs[i];
+                if expr_info.ty.is_unknown() {
+                    if self.check_expr(i) {
+                        //println!("!!! {} {:?}",i,self.exprs[i].expr);
+                        mutated = true;
                     }
                 }
+            }
 
-                // todo update child types
+            // TODO: swap in a return instead of having a trailing expr?
+            if let Some(res) = self.body.result {
+                if self.update_expr_type(res as usize, sig.output) {
+                    mutated = true;
+                }
             }
         }
     }
 
+    fn update_binary_op_types(&mut self, parent: usize, child1: usize, child2: usize) -> bool {
+        let parent_ty = self.exprs[parent].ty;
+        let child1_ty = self.exprs[child1].ty;
+        let child2_ty = self.exprs[child2].ty;
+
+        if child1_ty != child2_ty || child1_ty != parent_ty {
+            println!("update {:?} -> {:?} {:?} {:?}",self.exprs[parent].expr,child1_ty,child2_ty,parent_ty);
+            if child1_ty.more_specific_than(child2_ty) {
+                println!("path1");
+                self.exprs[parent].ty = child1_ty;
+                self.update_expr_type(child2 as usize, child1_ty);
+            } else {
+                println!("path2");
+                self.exprs[parent].ty = child2_ty;
+                self.update_expr_type(child1 as usize, child2_ty);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    // returns true if anything was mutated
+    fn check_expr(&mut self, index: usize) -> bool {
+        let info = &self.exprs[index];
+        let current_ty = info.ty;
+        match info.expr {
+            Expr::LitInt(_x) => false,
+            Expr::DeclVar() => false,
+            Expr::Assign(dst,src) => {
+                self.update_binary_op_types(index, dst as usize, src as usize)
+            },
+            Expr::BinOpPrimitive(lhs,op,rhs) => {
+                // not ALWAYS the right action:
+                //  logical ops need bools
+                //  bit shifts allow different sized args
+                self.update_binary_op_types(index, lhs as usize, rhs as usize)
+            },
+            Expr::BinOp(lhs,op,rhs) => {
+                let lty = self.exprs[lhs as usize].ty;
+                let rty = self.exprs[rhs as usize].ty;
+
+                if lty.is_numeric_primitive() && rty.is_numeric_primitive() {
+                    self.exprs[index].expr = Expr::BinOpPrimitive(lhs,op,rhs);
+                    // not ALWAYS the right action:
+                    //  logical ops need bools
+                    //  bit shifts allow different sized args
+                    self.update_binary_op_types(index, lhs as usize, rhs as usize);
+                    // always return true since we switch node types
+                    true
+                } else {
+                    panic!("todo trait lookup");
+                }
+            },
+            _ => panic!("todo check {:?}",info.expr)
+        }
+    }
+
+    fn update_expr_type(&mut self, index: usize, ty: Type) -> bool {
+        if ty.more_specific_than( self.exprs[index].ty ) {
+            self.exprs[index].ty = ty;
+            
+            let info = &self.exprs[index];
+            match info.expr {
+                Expr::DeclVar() => (),
+                Expr::LitInt(_x) => {
+                    assert!(ty.is_numeric_primitive());
+                },
+                Expr::BinOpPrimitive(lhs,_op,rhs) => {
+                    // todo this is NOT correct for all operators
+                    self.update_expr_type(lhs as usize, ty);
+                    self.update_expr_type(rhs as usize, ty);
+                },
+                _ => panic!("todo update {:?}",info.expr)
+            }
+            return true;
+        }
+        false
+    }
+
     pub fn print(&self) {
         for (i,expr) in self.exprs.iter().enumerate() {
-            println!("{:4} {:?}",i,expr);
+            println!("{:4} {:?} :: {:?} ~~ {:?}",i,expr.expr,expr.ty,expr.op_info);
         }
         println!("=> {:?}",self.body);
     }
@@ -62,25 +164,35 @@ pub struct Block{
     result: Option<u32>
 }
 
+fn push_expr(exprs: &mut Vec<ExprInfo>, expr: Expr, ty: Type) -> u32 {
+    let id = exprs.len() as u32;
+    exprs.push(ExprInfo::new(expr,ty));
+    id
+}
+
+fn pat_to_name(pat: &syn::Pat) -> String {
+    if let syn::Pat::Ident(pat_ident) = pat {
+        pat_ident.ident.to_string()
+    } else {
+        panic!("pattern: {:?}",pat);
+    }
+}
+
 impl Block {
-    pub fn add_args(&mut self, exprs: &mut Vec<Expr>, sig: &syn::Signature) {
-        for (i,arg) in sig.inputs.iter().enumerate() {
-            exprs.push(Expr::DeclArg(i as u32));
-            let name = match arg {
-                syn::FnArg::Receiver(x) => String::from("self"),
-                syn::FnArg::Typed(x) => {
-                    if let syn::Pat::Ident(pat_ident) = &*x.pat {
-                        pat_ident.ident.to_string()
-                    } else {
-                        panic!("pattern: {:?}",x.pat);
-                    }
+    pub fn add_args(&mut self, exprs: &mut Vec<ExprInfo>, syn_sig: &syn::Signature, sig: &Signature) {
+        for (i,(syn_arg,ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
+            exprs.push( ExprInfo::new(Expr::DeclArg(i as u32),*ty) );
+            let name = match syn_arg {
+                syn::FnArg::Receiver(_recv) => String::from("self"),
+                syn::FnArg::Typed(pt) => {
+                    pat_to_name(&*pt.pat)
                 }
             };
             self.scope.borrow_mut().declare(ItemName::Value(name), Item::Local(i as u32));
         }
     }
 
-    pub fn add_from_syn(&mut self, exprs: &mut Vec<Expr>, syn_block: &syn::Block) {
+    pub fn add_from_syn(&mut self, exprs: &mut Vec<ExprInfo>, syn_block: &syn::Block) {
         let mut terminate = false;
         for stmt in &syn_block.stmts {
             if terminate {
@@ -91,24 +203,34 @@ impl Block {
                     self.result = Some( self.add_expr(exprs,syn_expr) );
                     terminate = true;
                 },
+                syn::Stmt::Local(syn_local) => {
+                    let ty = Type::Unknown;
+
+                    let var_id = push_expr(exprs, Expr::DeclVar(), ty);
+                    let name = pat_to_name(&syn_local.pat);
+                    self.scope.borrow_mut().declare(ItemName::Value(name), Item::Local(var_id));
+                    // the decl itself is pushed to the stmts list
+                    self.stmts.push(var_id);
+
+                    if let Some((_,init)) = &syn_local.init {
+                        let init_id = self.add_expr(exprs, &init);
+                        let assign_id = push_expr(exprs, Expr::Assign(var_id,init_id), ty);
+                        self.stmts.push(assign_id);
+                    }
+                },
                 _ => panic!("todo handle stmt => {:?}",stmt)
             }
         }
     }
 
-    fn add_expr(&mut self, exprs: &mut Vec<Expr>, syn_expr: &syn::Expr) -> u32 {
-        fn push_expr(exprs: &mut Vec<Expr>, expr: Expr) -> u32 {
-            let id = exprs.len() as u32;
-            exprs.push(expr);
-            id
-        }
+    fn add_expr(&mut self, exprs: &mut Vec<ExprInfo>, syn_expr: &syn::Expr) -> u32 {
 
         match syn_expr {
             syn::Expr::Paren(syn::ExprParen{expr,..}) => self.add_expr(exprs, expr),
             syn::Expr::Binary(syn::ExprBinary{left,op,right,..}) => {
                 let id_l = self.add_expr(exprs, left);
                 let id_r = self.add_expr(exprs, right);
-                push_expr(exprs, Expr::BinOp(id_l,*op,id_r))
+                push_expr(exprs, Expr::BinOp(id_l,*op,id_r), Type::Unknown)
             },
             syn::Expr::Path(syn::ExprPath{path,..}) => {
                 if path.segments.len() == 1 {
@@ -136,7 +258,7 @@ impl Block {
                         if suffix.len() != 0 {
                             panic!("todo lit suffix");
                         }
-                        push_expr(exprs, Expr::LitInt(n))
+                        push_expr(exprs, Expr::LitInt(n), Type::IntUnknown)
                     },
                     _ => panic!("stop")
                 }
@@ -153,7 +275,9 @@ impl Block {
 #[derive(Debug)]
 pub enum Expr{
     DeclArg(u32),
-    DeclVar(u32),
+    DeclVar(),
     BinOp(u32,syn::BinOp,u32),
-    LitInt(u128)
+    BinOpPrimitive(u32,syn::BinOp,u32),
+    LitInt(u128),
+    Assign(u32,u32),
 }
