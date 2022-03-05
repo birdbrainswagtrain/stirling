@@ -2,10 +2,11 @@
 mod hir_items;
 mod hir_expr;
 mod types;
+mod jit;
 
-use hir_expr::FuncCode;
 
-use crate::{hir_items::{Scope, ItemName, Item}, hir_expr::Block};
+use crate::{hir_items::{Scope, ItemName, Item}};
+use jit::JIT;
 
 fn main() {
     let file_string = std::fs::read_to_string("test/add.rs").expect("failed to read source file");
@@ -18,8 +19,16 @@ fn main() {
     if let Item::Fn(func) = scope.get(&ItemName::Value("add".into())).unwrap() {
         //let code = func.code();
         //code.print();
-        let x = func.code();
-        x.print();
-        //println!("{:?}",x);
+        let code = func.code();
+        code.print();
+
+        let mut jit: JIT = Default::default();
+
+        let compiled = jit.compile(func.sig(),code).unwrap();
+
+        let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled) };
+
+        println!("a {}",compiled_fn(111,222));
+        //println!("=> {:?}",jit.compile(func.sig(),code));
     }
 }

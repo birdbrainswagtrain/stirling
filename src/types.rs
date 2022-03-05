@@ -1,9 +1,5 @@
 
-use std::{rc::Rc, cell::RefCell};
-
-use syn::BinOp;
-
-use crate::{hir_expr::Expr, hir_items::{Scope, try_path_to_name}};
+use crate::hir_items::{Scope, try_path_to_name};
 
 
 
@@ -73,18 +69,25 @@ impl Type {
         }
     }
 
-    pub fn is_numeric_primitive(&self) -> bool {
+    pub fn is_number(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) => true,
             _ => false
         }
     }
 
-    pub fn more_specific_than(&self, other: Type) -> bool {
-        if *self == other {
+    pub fn is_int(&self) -> bool {
+        match self {
+            Type::IntUnknown | Type::Int(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn more_specific_than(self, other: Type) -> bool {
+        if self == other {
             false
         } else {
-            if *self == Type::Unknown {
+            if self == Type::Unknown {
                 false
             } else {
                 true

@@ -6,64 +6,62 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub struct FuncCode{
-    body: Block,
-    exprs: Vec<ExprInfo>
+    pub root_expr: usize,
+    pub exprs: Vec<ExprInfo>,
+    pub vars: Vec<u32> // map into expr list
 }
 
 pub struct ExprInfo{
-    expr: Expr,
-    ty: Type,
-    op_info: OpInfo
+    pub expr: Expr,
+    pub ty: Type
 }
 
 impl ExprInfo{
     pub fn new(expr: Expr, ty: Type) -> ExprInfo {
-        ExprInfo{expr, ty, op_info: OpInfo::None}
+        ExprInfo{expr, ty}
     }
 }
 
-#[derive(Debug,PartialEq)]
-enum OpInfo{
-    None,
-    //PrimitiveOp
-}
-
 impl FuncCode {
-    pub fn from_syn(syn_fn: &syn::ItemFn, sig: &Signature, scope: &Scope) -> Self {
+    pub fn from_syn(syn_fn: &syn::ItemFn, ty_sig: &Signature, scope: &Scope) -> Self {
         let mut code = FuncCode{
-            body: Default::default(),
-            exprs: vec!()
+            root_expr: 0, // invalid, todo fill
+            exprs: vec!(),
+            vars: vec!()
         };
-        code.body.add_args(&mut code.exprs, &syn_fn.sig, sig);
-        code.body.add_from_syn(&mut code.exprs, &syn_fn.block);
+        let mut body: Block = Default::default();
+        body.add_args(&mut code, &syn_fn.sig, ty_sig);
+        body.add_from_syn(&mut code, &syn_fn.block);
 
-        code.check(sig);
+        let root = code.push_expr(Expr::Block(Box::new(body)), Type::Unknown);
+        code.update_expr_type(root as usize, ty_sig.output);
+        code.root_expr = root as usize;
+
+        code.check();
 
         code
     }
 
-    pub fn check(&mut self, sig: &Signature) {
+    fn push_expr(&mut self, expr: Expr, ty: Type) -> u32 {
+        let id = self.exprs.len() as u32;
+        self.exprs.push(ExprInfo::new(expr,ty));
+        id
+    }
+
+    pub fn check(&mut self) {
 
         let mut mutated = true;
 
         while mutated {
-            println!("pass...");
             mutated = false;
 
             for i in 0..self.exprs.len() {
                 let expr_info = &self.exprs[i];
-                if expr_info.ty.is_unknown() {
+                if expr_info.ty.is_unknown() || expr_info.expr.needs_update() {
                     if self.check_expr(i) {
                         //println!("!!! {} {:?}",i,self.exprs[i].expr);
                         mutated = true;
                     }
-                }
-            }
-
-            // TODO: swap in a return instead of having a trailing expr?
-            if let Some(res) = self.body.result {
-                if self.update_expr_type(res as usize, sig.output) {
-                    mutated = true;
                 }
             }
         }
@@ -75,13 +73,10 @@ impl FuncCode {
         let child2_ty = self.exprs[child2].ty;
 
         if child1_ty != child2_ty || child1_ty != parent_ty {
-            println!("update {:?} -> {:?} {:?} {:?}",self.exprs[parent].expr,child1_ty,child2_ty,parent_ty);
             if child1_ty.more_specific_than(child2_ty) {
-                println!("path1");
                 self.exprs[parent].ty = child1_ty;
                 self.update_expr_type(child2 as usize, child1_ty);
             } else {
-                println!("path2");
                 self.exprs[parent].ty = child2_ty;
                 self.update_expr_type(child1 as usize, child2_ty);
             }
@@ -94,14 +89,14 @@ impl FuncCode {
     // returns true if anything was mutated
     fn check_expr(&mut self, index: usize) -> bool {
         let info = &self.exprs[index];
-        let current_ty = info.ty;
+
         match info.expr {
             Expr::LitInt(_x) => false,
-            Expr::DeclVar() => false,
+            Expr::Var(_x) => false,
             Expr::Assign(dst,src) => {
                 self.update_binary_op_types(index, dst as usize, src as usize)
             },
-            Expr::BinOpPrimitive(lhs,op,rhs) => {
+            Expr::BinOpPrimitive(lhs,_op,rhs) => {
                 // not ALWAYS the right action:
                 //  logical ops need bools
                 //  bit shifts allow different sized args
@@ -111,7 +106,7 @@ impl FuncCode {
                 let lty = self.exprs[lhs as usize].ty;
                 let rty = self.exprs[rhs as usize].ty;
 
-                if lty.is_numeric_primitive() && rty.is_numeric_primitive() {
+                if lty.is_number() && rty.is_number() {
                     self.exprs[index].expr = Expr::BinOpPrimitive(lhs,op,rhs);
                     // not ALWAYS the right action:
                     //  logical ops need bools
@@ -132,13 +127,23 @@ impl FuncCode {
             self.exprs[index].ty = ty;
             
             let info = &self.exprs[index];
-            match info.expr {
-                Expr::DeclVar() => (),
-                Expr::LitInt(_x) => {
-                    assert!(ty.is_numeric_primitive());
+            match &info.expr {
+                Expr::Var(_x) => (),
+                Expr::Block(block) => {
+                    if let Some(res) = block.result {
+                        self.update_expr_type(res as usize, ty);
+                    } else {
+                        panic!("no result!");
+                    }
                 },
+                Expr::LitInt(_x) => {
+                    assert!(ty.is_int());
+                },
+                Expr::BinOp(..) => (), // can't do anything at this stage
                 Expr::BinOpPrimitive(lhs,_op,rhs) => {
                     // todo this is NOT correct for all operators
+                    let lhs = *lhs;
+                    let rhs = *rhs;
                     self.update_expr_type(lhs as usize, ty);
                     self.update_expr_type(rhs as usize, ty);
                 },
@@ -150,24 +155,19 @@ impl FuncCode {
     }
 
     pub fn print(&self) {
+        println!("ROOT -> {}",self.root_expr);
         for (i,expr) in self.exprs.iter().enumerate() {
-            println!("{:4} {:?} :: {:?} ~~ {:?}",i,expr.expr,expr.ty,expr.op_info);
+            println!("{:4} {:?} :: {:?}",i,expr.expr,expr.ty);
         }
-        println!("=> {:?}",self.body);
+        println!("VARS -> {:?}",self.vars);
     }
 }
 
 #[derive(Debug,Default)]
 pub struct Block{
     scope: Rc<RefCell<Scope>>,
-    stmts: Vec<u32>,
-    result: Option<u32>
-}
-
-fn push_expr(exprs: &mut Vec<ExprInfo>, expr: Expr, ty: Type) -> u32 {
-    let id = exprs.len() as u32;
-    exprs.push(ExprInfo::new(expr,ty));
-    id
+    pub stmts: Vec<u32>,
+    pub result: Option<u32>
 }
 
 fn pat_to_name(pat: &syn::Pat) -> String {
@@ -179,9 +179,12 @@ fn pat_to_name(pat: &syn::Pat) -> String {
 }
 
 impl Block {
-    pub fn add_args(&mut self, exprs: &mut Vec<ExprInfo>, syn_sig: &syn::Signature, sig: &Signature) {
+    pub fn add_args(&mut self, code: &mut FuncCode, syn_sig: &syn::Signature, sig: &Signature) {
         for (i,(syn_arg,ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
-            exprs.push( ExprInfo::new(Expr::DeclArg(i as u32),*ty) );
+
+            let var_id = code.push_expr(Expr::Var(i as u32), *ty );
+            code.vars.push(var_id);
+
             let name = match syn_arg {
                 syn::FnArg::Receiver(_recv) => String::from("self"),
                 syn::FnArg::Typed(pt) => {
@@ -192,7 +195,7 @@ impl Block {
         }
     }
 
-    pub fn add_from_syn(&mut self, exprs: &mut Vec<ExprInfo>, syn_block: &syn::Block) {
+    pub fn add_from_syn(&mut self, code: &mut FuncCode, syn_block: &syn::Block) {
         let mut terminate = false;
         for stmt in &syn_block.stmts {
             if terminate {
@@ -200,21 +203,23 @@ impl Block {
             }
             match stmt {
                 syn::Stmt::Expr(syn_expr) => {
-                    self.result = Some( self.add_expr(exprs,syn_expr) );
+                    self.result = Some( self.add_expr(code,syn_expr) );
                     terminate = true;
                 },
                 syn::Stmt::Local(syn_local) => {
                     let ty = Type::Unknown;
 
-                    let var_id = push_expr(exprs, Expr::DeclVar(), ty);
+                    let var_id = code.push_expr(Expr::Var(code.vars.len() as u32), ty );
+                    code.vars.push(var_id);
+
                     let name = pat_to_name(&syn_local.pat);
                     self.scope.borrow_mut().declare(ItemName::Value(name), Item::Local(var_id));
                     // the decl itself is pushed to the stmts list
-                    self.stmts.push(var_id);
+                    // self.stmts.push(var_id);
 
                     if let Some((_,init)) = &syn_local.init {
-                        let init_id = self.add_expr(exprs, &init);
-                        let assign_id = push_expr(exprs, Expr::Assign(var_id,init_id), ty);
+                        let init_id = self.add_expr(code, &init);
+                        let assign_id = code.push_expr(Expr::Assign(var_id,init_id), ty);
                         self.stmts.push(assign_id);
                     }
                 },
@@ -223,14 +228,14 @@ impl Block {
         }
     }
 
-    fn add_expr(&mut self, exprs: &mut Vec<ExprInfo>, syn_expr: &syn::Expr) -> u32 {
+    fn add_expr(&mut self, code: &mut FuncCode, syn_expr: &syn::Expr) -> u32 {
 
         match syn_expr {
-            syn::Expr::Paren(syn::ExprParen{expr,..}) => self.add_expr(exprs, expr),
+            syn::Expr::Paren(syn::ExprParen{expr,..}) => self.add_expr(code, expr),
             syn::Expr::Binary(syn::ExprBinary{left,op,right,..}) => {
-                let id_l = self.add_expr(exprs, left);
-                let id_r = self.add_expr(exprs, right);
-                push_expr(exprs, Expr::BinOp(id_l,*op,id_r), Type::Unknown)
+                let id_l = self.add_expr(code, left);
+                let id_r = self.add_expr(code, right);
+                code.push_expr(Expr::BinOp(id_l,*op,id_r), Type::Unknown)
             },
             syn::Expr::Path(syn::ExprPath{path,..}) => {
                 if path.segments.len() == 1 {
@@ -258,7 +263,7 @@ impl Block {
                         if suffix.len() != 0 {
                             panic!("todo lit suffix");
                         }
-                        push_expr(exprs, Expr::LitInt(n), Type::IntUnknown)
+                        code.push_expr(Expr::LitInt(n), Type::IntUnknown)
                     },
                     _ => panic!("stop")
                 }
@@ -274,10 +279,20 @@ impl Block {
 
 #[derive(Debug)]
 pub enum Expr{
-    DeclArg(u32),
-    DeclVar(),
+    //DeclArg(u32),
+    Block(Box<Block>),
+    Var(u32),
     BinOp(u32,syn::BinOp,u32),
     BinOpPrimitive(u32,syn::BinOp,u32),
     LitInt(u128),
     Assign(u32,u32),
+}
+
+impl Expr {
+    fn needs_update(&self) -> bool {
+        match self {
+            Expr::BinOp(..) => true,
+            _ => false
+        }
+    }
 }
