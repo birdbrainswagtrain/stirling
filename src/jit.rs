@@ -36,7 +36,7 @@ impl Default for JIT {
 }
 
 impl JIT {
-    pub fn compile(&mut self, sig: &Signature, code: &FuncCode) -> Result<*const u8, String> {
+    pub fn compile(&mut self, sig: &Signature, code: &FuncCode) -> Result<(*const u8,usize), String> {
         let fn_id = self.module.declare_function("butt", Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
@@ -53,15 +53,16 @@ impl JIT {
             jit_func.compile();
         }
 
-        self.module.define_function(fn_id, &mut self.ctx)
+        let compiled_fn = self.module.define_function(fn_id, &mut self.ctx)
             .map_err(|e| e.to_string())?;
+        let size = compiled_fn.size as usize;
         
         self.module.clear_context(&mut self.ctx);
         self.module.finalize_definitions();
     
         let code = self.module.get_finalized_function(fn_id);
         
-        Ok(code)
+        Ok((code,size))
     }
 
     fn lower_sig(&mut self, sig: &Signature) {

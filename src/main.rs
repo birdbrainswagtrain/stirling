@@ -23,11 +23,19 @@ fn main() {
 
         let mut jit: JIT = Default::default();
 
-        let compiled = jit.compile(func.sig(),code).unwrap();
+        let (compiled_ptr,compiled_size) = jit.compile(func.sig(),code).unwrap();
+        {
+            let compiled_slice = unsafe { std::slice::from_raw_parts(compiled_ptr,compiled_size) };
+            print!("code: ");
+            for x in compiled_slice {
+                print!("{:02x}",x);
+            }
+            println!();
+        }
 
-        let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled) };
+        let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled_ptr) };
 
-        println!("a {}",compiled_fn(1,5));
+        println!("res: {}",compiled_fn(1,5));
         //println!("=> {:?}",jit.compile(func.sig(),code));
     }
 }
