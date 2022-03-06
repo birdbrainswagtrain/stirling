@@ -20,7 +20,6 @@ fn main() {
         //let code = func.code();
         //code.print();
         let code = func.code();
-        code.print();
 
         let mut jit: JIT = Default::default();
 
@@ -28,7 +27,7 @@ fn main() {
 
         let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled) };
 
-        println!("a {}",compiled_fn(111,222));
+        println!("a {}",compiled_fn(1,5));
         //println!("=> {:?}",jit.compile(func.sig(),code));
     }
 }

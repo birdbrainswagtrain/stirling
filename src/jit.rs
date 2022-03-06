@@ -76,7 +76,8 @@ impl JIT {
 
 fn lower_type(ty: Type) -> CType {
     match ty {
-        Type::Int(TypeInt::I32) => types::I32,
+        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => types::I32,
+        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => types::I16,
         _ => panic!("unknown type")
     }
 }
@@ -111,9 +112,7 @@ impl<'a> JITFunc<'a> {
             self.fn_builder.def_var(var, *val);
         }
         
-
         let res = self.lower_expr(self.code.root_expr as u32);
-        //panic!("stop");
         self.fn_builder.ins().return_(&[res.unwrap()]);
 
         self.fn_builder.finalize();
@@ -136,13 +135,54 @@ impl<'a> JITFunc<'a> {
                 let src_val = self.lower_expr(*src);
                 self.lower_assign(*dest,src_val)
             },
+            Expr::CastPrimitive(arg) => {
+                let src_ty = self.code.exprs[*arg as usize].ty;
+
+                let arg = self.lower_expr(*arg).unwrap();
+
+                if src_ty.is_int() && ty.is_int() {
+                    let size_src = src_ty.byte_size();
+                    let size_dest = ty.byte_size();
+
+                    if size_src == size_dest {
+                        Some(arg)
+                    } else if size_src < size_dest {
+                        // widening: our type of extension is determined by the source type
+                        if src_ty.is_signed() {
+                            Some( self.fn_builder.ins().sextend(cty,arg) )
+                        } else {
+                            Some( self.fn_builder.ins().uextend(cty,arg) )
+                        }
+                    } else {
+                        // narrowing
+                        Some( self.fn_builder.ins().ireduce(cty,arg) )
+                    }
+                } else {
+                    panic!("non integer casts nyi");
+                }
+            },
             Expr::BinOpPrimitive(lhs,op,rhs) => {
                 let lhs = self.lower_expr(*lhs).unwrap();
                 let rhs = self.lower_expr(*rhs).unwrap();
 
                 Some(match *op {
                     BinOp::Add(_) => self.fn_builder.ins().iadd(lhs,rhs),
+                    BinOp::Sub(_) => self.fn_builder.ins().isub(lhs,rhs),
                     BinOp::Mul(_) => self.fn_builder.ins().imul(lhs,rhs),
+                    BinOp::Div(_) => {
+                        if ty.is_signed() {
+                            self.fn_builder.ins().sdiv(lhs,rhs)
+                        } else {
+                            self.fn_builder.ins().udiv(lhs,rhs)
+                        }
+                    },
+                    BinOp::Rem(_) => {
+                        if ty.is_signed() {
+                            self.fn_builder.ins().srem(lhs,rhs)
+                        } else {
+                            self.fn_builder.ins().urem(lhs,rhs)
+                        }
+                    },
                     _ => panic!("todo op {:?}",op)
                 })
             },

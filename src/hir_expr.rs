@@ -52,8 +52,14 @@ impl FuncCode {
 
         let mut mutated = true;
 
+        let mut step = 0;
+
         while mutated {
             mutated = false;
+
+            println!("=================== STEP {} ===================",step);
+            step += 1;
+            self.print();
 
             for i in 0..self.exprs.len() {
                 let expr_info = &self.exprs[i];
@@ -73,7 +79,7 @@ impl FuncCode {
         let child2_ty = self.exprs[child2].ty;
 
         if child1_ty != child2_ty || child1_ty != parent_ty {
-            if child1_ty.more_specific_than(child2_ty) {
+            if child2_ty.can_upgrade_to(child1_ty) {
                 self.exprs[parent].ty = child1_ty;
                 self.update_expr_type(child2 as usize, child1_ty);
             } else {
@@ -123,7 +129,7 @@ impl FuncCode {
     }
 
     fn update_expr_type(&mut self, index: usize, ty: Type) -> bool {
-        if ty.more_specific_than( self.exprs[index].ty ) {
+        if self.exprs[index].ty.can_upgrade_to(ty) {
             self.exprs[index].ty = ty;
             
             let info = &self.exprs[index];
@@ -206,6 +212,10 @@ impl Block {
                     self.result = Some( self.add_expr(code,syn_expr) );
                     terminate = true;
                 },
+                syn::Stmt::Semi(syn_expr,_) => {
+                    let expr_id = self.add_expr(code,syn_expr);
+                    self.stmts.push(expr_id);
+                },
                 syn::Stmt::Local(syn_local) => {
                     let ty = Type::Unknown;
 
@@ -214,8 +224,6 @@ impl Block {
 
                     let name = pat_to_name(&syn_local.pat);
                     self.scope.borrow_mut().declare(ItemName::Value(name), Item::Local(var_id));
-                    // the decl itself is pushed to the stmts list
-                    // self.stmts.push(var_id);
 
                     if let Some((_,init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
@@ -237,6 +245,12 @@ impl Block {
                 let id_r = self.add_expr(code, right);
                 code.push_expr(Expr::BinOp(id_l,*op,id_r), Type::Unknown)
             },
+            syn::Expr::Assign(syn::ExprAssign{left,right,..}) => {
+                let id_l = self.add_expr(code, left);
+                let id_r = self.add_expr(code, right);
+
+                code.push_expr(Expr::Assign(id_l,id_r), Type::Unknown)
+            },
             syn::Expr::Path(syn::ExprPath{path,..}) => {
                 if path.segments.len() == 1 {
                     let name = ItemName::Value(path.segments[0].ident.to_string());
@@ -255,15 +269,24 @@ impl Block {
                     panic!("todo complex paths");
                 }
             },
+            syn::Expr::Cast(syn::ExprCast{expr,ty,..}) => {
+                let hir_ty = Type::from_syn(ty, &self.scope.borrow());
+                let arg = self.add_expr(code, expr);
+
+                code.push_expr(Expr::CastPrimitive(arg), hir_ty)
+            },
             syn::Expr::Lit(syn::ExprLit{lit,..}) => {
                 match lit {
                     syn::Lit::Int(int) => {
                         let n: u128 = int.base10_parse().unwrap();
                         let suffix = int.suffix();
-                        if suffix.len() != 0 {
-                            panic!("todo lit suffix");
-                        }
-                        code.push_expr(Expr::LitInt(n), Type::IntUnknown)
+                        let ty = if suffix.len() != 0 {
+                            Type::from_str(suffix).unwrap()
+                        } else {
+                            Type::IntUnknown
+                        };
+                        assert!(ty.is_int());
+                        code.push_expr(Expr::LitInt(n), ty)
                     },
                     _ => panic!("stop")
                 }
@@ -286,6 +309,7 @@ pub enum Expr{
     BinOpPrimitive(u32,syn::BinOp,u32),
     LitInt(u128),
     Assign(u32,u32),
+    CastPrimitive(u32)
 }
 
 impl Expr {
