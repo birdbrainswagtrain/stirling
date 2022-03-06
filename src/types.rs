@@ -38,6 +38,7 @@ pub enum Type{
     Unknown,
     IntUnknown,
     Int(TypeInt),
+    Bool,
     Void,
     Never
 }

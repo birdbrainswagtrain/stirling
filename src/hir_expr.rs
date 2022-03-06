@@ -1,4 +1,6 @@
 
+use syn::LitBool;
+
 use crate::hir_items::{Scope, Item, ItemName};
 use crate::types::{Type, Signature};
 
@@ -164,6 +166,27 @@ impl FuncCode {
                 }
                 false
             },
+            Expr::IfElse(cond,ref then_block, else_expr) => {
+                let then_expr = then_block.result;
+
+                let mut result = self.update_expr_type(cond as usize,Type::Bool);
+
+                if let Some(then_expr) = then_expr {
+                    if self.check_binary_op_types(index, then_expr as usize, else_expr as usize) {
+                        result = true;
+                    }
+                } else {
+                    // else side must be void
+                    if self.update_expr_type(else_expr as usize, Type::Void) {
+                        result = true;
+                    }
+                    if self.exprs[index].ty.can_upgrade_to(Type::Void) {
+                        self.exprs[index].ty = Type::Void;
+                    }
+                }
+
+                result
+            },
             _ => panic!("todo check {:?}",info.expr)
         }
     }
@@ -179,8 +202,16 @@ impl FuncCode {
                     if let Some(res) = block.result {
                         self.update_expr_type(res as usize, ty);
                     } else {
-                        panic!("no result!");
+                        panic!("no result, asset ty = void");
                     }
+                },
+                Expr::IfElse(_cond,ref then_block, else_expr) => {
+                    if let Some(then_expr) = then_block.result {
+                        self.update_expr_type(then_expr as usize, ty);
+                    } else {
+                        panic!("no result, asset ty = void");
+                    }
+                    self.update_expr_type(else_expr as usize, ty);
                 },
                 Expr::LitInt(_x) => {
                     assert!(ty.is_int());
@@ -334,7 +365,10 @@ impl Block {
                         assert!(ty.is_int());
                         code.push_expr(Expr::LitInt(n), ty)
                     },
-                    _ => panic!("stop")
+                    syn::Lit::Bool(LitBool{value,..}) => {
+                        code.push_expr(Expr::LitBool(*value), Type::Bool)
+                    },
+                    _ => panic!("todo handle lit {:?}",lit)
                 }
             },
             // control flow-ish stuff
@@ -346,9 +380,10 @@ impl Block {
                 let id_cond = self.add_expr(code, cond);
                 let then_block = Block::from_syn(code, then_branch);
                 if let Some((_,else_branch)) = else_branch {
-                    let else_id = self.add_expr(code, else_branch);
-                    panic!("dual side if");
+                    let id_else = self.add_expr(code, else_branch);
+                    code.push_expr(Expr::IfElse(id_cond,then_block,id_else), Type::Unknown)
                 } else {
+                    // TODO use type unknown so the expr is properly checked
                     panic!("single-side if");
                 }
             },
@@ -373,6 +408,7 @@ pub enum Expr{
     UnOp(u32,syn::UnOp),
     UnOpPrimitive(u32,syn::UnOp),
     LitInt(u128),
+    LitBool(bool),
     Assign(u32,u32),
     CastPrimitive(u32),
     If(u32,Box<Block>),

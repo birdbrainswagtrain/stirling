@@ -79,6 +79,7 @@ fn lower_type(ty: Type) -> CType {
     match ty {
         Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => types::I32,
         Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => types::I16,
+        Type::Bool => types::B1,
         _ => panic!("unknown type")
     }
 }
@@ -204,18 +205,69 @@ impl<'a> JITFunc<'a> {
                     panic!("int too wide");
                 }
             },
+            Expr::LitBool(x) => {
+                Some( self.fn_builder.ins().bconst(cty,*x) )
+            },
             Expr::Block(block) => {
-                for expr_id in &block.stmts {
-                    self.lower_expr(*expr_id);
+                self.lower_block(block)
+            },
+            Expr::IfElse(cond,then_block,else_expr) => {
+                let then_cb = self.fn_builder.create_block();
+                let else_cb = self.fn_builder.create_block();
+                let final_cb = self.fn_builder.create_block();
+
+                let cond = self.lower_expr(*cond).unwrap();
+
+                self.fn_builder.ins().brnz(cond, then_cb, &[]);
+                self.fn_builder.ins().jump(else_cb, &[]);
+
+                self.fn_builder.seal_block(then_cb);
+                self.fn_builder.seal_block(else_cb);
+
+                // then branch
+                self.fn_builder.switch_to_block(then_cb);
+
+                if let Some(then_res) = self.lower_block(then_block) {
+                    self.fn_builder.ins().jump(final_cb, &[then_res]);
+                } else {
+                    self.fn_builder.ins().jump(final_cb, &[]);
                 }
 
-                if let Some(expr_id) = &block.result {
-                    self.lower_expr(*expr_id)
+                // else branch
+                self.fn_builder.switch_to_block(else_cb);
+
+                if let Some(else_res) = self.lower_expr(*else_expr) {
+                    self.fn_builder.ins().jump(final_cb, &[else_res]);
+                } else {
+                    self.fn_builder.ins().jump(final_cb, &[]);
+                }
+
+                // final, unified block
+                self.fn_builder.switch_to_block(final_cb);
+                self.fn_builder.seal_block(final_cb);
+                
+                let res = if *ty != Type::Void {
+                    self.fn_builder.append_block_param(final_cb, cty);
+                    Some( self.fn_builder.block_params(final_cb)[0] )
                 } else {
                     None
-                }
+                };
+
+                res
             },
             _ => panic!("todo lower expr {:?}",expr)
+        }
+    }
+
+    fn lower_block(&mut self, block: &Block) -> CVal {
+        for expr_id in &block.stmts {
+            self.lower_expr(*expr_id);
+        }
+
+        if let Some(expr_id) = &block.result {
+            self.lower_expr(*expr_id)
+        } else {
+            None
         }
     }
 
