@@ -37,7 +37,9 @@ impl Signature{
 pub enum Type{
     Unknown,
     IntUnknown,
-    Int(TypeInt)
+    Int(TypeInt),
+    Void,
+    Never
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -75,15 +77,15 @@ impl Type {
         match name {
 
             "isize" => Some( Type::Int(TypeInt::ISize) ),
-            "i128" => Some( Type::Int(TypeInt::I64) ),
-            "i64" => Some( Type::Int(TypeInt::I32) ),
+            "i128" => Some( Type::Int(TypeInt::I128) ),
+            "i64" => Some( Type::Int(TypeInt::I64) ),
             "i32" => Some( Type::Int(TypeInt::I32) ),
             "i16" => Some( Type::Int(TypeInt::I16) ),
             "i8" => Some( Type::Int(TypeInt::I8) ),
 
             "usize" => Some( Type::Int(TypeInt::USize) ),
-            "u128" => Some( Type::Int(TypeInt::U64) ),
-            "u64" => Some( Type::Int(TypeInt::U32) ),
+            "u128" => Some( Type::Int(TypeInt::U128) ),
+            "u64" => Some( Type::Int(TypeInt::U64) ),
             "u32" => Some( Type::Int(TypeInt::U32) ),
             "u16" => Some( Type::Int(TypeInt::U16) ),
             "u8" => Some( Type::Int(TypeInt::U8) ),

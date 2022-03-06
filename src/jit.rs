@@ -3,7 +3,7 @@
 use cranelift::{prelude::*, codegen::Context};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Module, DataContext, Linkage};
-use syn::BinOp;
+use syn::{BinOp, UnOp};
 
 use crate::{hir_expr::{FuncCode, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
 
@@ -183,6 +183,14 @@ impl<'a> JITFunc<'a> {
                             self.fn_builder.ins().urem(lhs,rhs)
                         }
                     },
+                    _ => panic!("todo op {:?}",op)
+                })
+            },
+            Expr::UnOpPrimitive(arg,op) => {
+                let arg = self.lower_expr(*arg).unwrap();
+
+                Some(match *op {
+                    UnOp::Neg(_) => self.fn_builder.ins().ineg(arg),
                     _ => panic!("todo op {:?}",op)
                 })
             },
