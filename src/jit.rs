@@ -84,6 +84,41 @@ fn lower_type(ty: Type) -> CType {
     }
 }
 
+#[derive(Debug,Copy,Clone)]
+enum LowBinOp {
+    Add, Sub, Mul, Div, Rem,
+    //BitAnd, BitOr, BitXor
+    Gt
+}
+
+impl LowBinOp {
+    fn int_cond_code(&self, sign: bool) -> IntCC {
+        match (self,sign) {
+            (LowBinOp::Gt,true) => IntCC::SignedGreaterThan,
+            _ => panic!("cond code for {:?} {}",self,sign)
+        }
+    }
+}
+
+fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
+    match op {
+        BinOp::Add(_) =>    (LowBinOp::Add, false),
+        BinOp::Sub(_) =>    (LowBinOp::Sub, false),
+        BinOp::Mul(_) =>    (LowBinOp::Mul, false),
+        BinOp::Div(_) =>    (LowBinOp::Div, false),
+        BinOp::Rem(_) =>    (LowBinOp::Rem, false),
+
+        BinOp::AddEq(_) =>  (LowBinOp::Add, true),
+        BinOp::SubEq(_) =>  (LowBinOp::Sub, true),
+        BinOp::MulEq(_) =>  (LowBinOp::Mul, true),
+        BinOp::DivEq(_) =>  (LowBinOp::Div, true),
+        BinOp::RemEq(_) =>  (LowBinOp::Rem, true),
+
+        BinOp::Gt(_) => (LowBinOp::Gt, false),
+        _ => panic!("can't lower op {:?}",op)
+    }
+}
+
 struct JITFunc<'a> {
     code: &'a FuncCode,
     fn_builder: FunctionBuilder<'a>,
@@ -94,7 +129,7 @@ impl<'a> JITFunc<'a> {
         let entry_block = self.fn_builder.create_block();
 
         for index in self.code.vars.iter() {
-            let ExprInfo{expr,ty} = &self.code.exprs[*index as usize];
+            let ExprInfo{expr,ty,..} = &self.code.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
                 let var = Variable::new(*var_id as usize);
                 let cty = lower_type(*ty);
@@ -121,7 +156,7 @@ impl<'a> JITFunc<'a> {
     }
 
     fn lower_expr(&mut self, expr_id: u32) -> CVal {
-        let ExprInfo{expr,ty} = &self.code.exprs[expr_id as usize];
+        let ExprInfo{expr,ty,..} = &self.code.exprs[expr_id as usize];
         let cty = lower_type(*ty);
         match expr {
             /*Expr::DeclVar(n) => {
@@ -132,10 +167,6 @@ impl<'a> JITFunc<'a> {
             Expr::Var(var_id) => {
                 let var = Variable::new(*var_id as usize);
                 Some(self.fn_builder.use_var(var))
-            },
-            Expr::Assign(dest,src) => {
-                let src_val = self.lower_expr(*src);
-                self.lower_assign(*dest,src_val)
             },
             Expr::CastPrimitive(arg) => {
                 let src_ty = self.code.exprs[*arg as usize].ty;
@@ -163,30 +194,50 @@ impl<'a> JITFunc<'a> {
                     panic!("non integer casts nyi");
                 }
             },
+            Expr::Assign(dest,src) => {
+                let src_val = self.lower_expr(*src);
+                self.lower_assign(*dest,src_val)
+            },
             Expr::BinOpPrimitive(lhs,op,rhs) => {
-                let lhs = self.lower_expr(*lhs).unwrap();
-                let rhs = self.lower_expr(*rhs).unwrap();
+                let lval = self.lower_expr(*lhs).unwrap();
+                let rval = self.lower_expr(*rhs).unwrap();
 
-                Some(match *op {
-                    BinOp::Add(_) => self.fn_builder.ins().iadd(lhs,rhs),
-                    BinOp::Sub(_) => self.fn_builder.ins().isub(lhs,rhs),
-                    BinOp::Mul(_) => self.fn_builder.ins().imul(lhs,rhs),
-                    BinOp::Div(_) => {
+                let (op,is_assign) = lower_bin_op(op);
+
+                let res_val = Some(match (ty,op) {
+                    (Type::Int(_),LowBinOp::Add) => self.fn_builder.ins().iadd(lval,rval),
+                    (Type::Int(_),LowBinOp::Sub) => self.fn_builder.ins().isub(lval,rval),
+                    (Type::Int(_),LowBinOp::Mul) => self.fn_builder.ins().imul(lval,rval),
+                    (Type::Int(_),LowBinOp::Div) => 
                         if ty.is_signed() {
-                            self.fn_builder.ins().sdiv(lhs,rhs)
+                            self.fn_builder.ins().sdiv(lval,rval)
                         } else {
-                            self.fn_builder.ins().udiv(lhs,rhs)
-                        }
-                    },
-                    BinOp::Rem(_) => {
+                            self.fn_builder.ins().udiv(lval,rval)
+                        },
+                    (Type::Int(_),LowBinOp::Rem) => 
                         if ty.is_signed() {
-                            self.fn_builder.ins().srem(lhs,rhs)
+                            self.fn_builder.ins().srem(lval,rval)
                         } else {
-                            self.fn_builder.ins().urem(lhs,rhs)
+                            self.fn_builder.ins().urem(lval,rval)
+                        },
+                    (_,LowBinOp::Gt) => {
+                        let arg_ty = self.code.exprs[*lhs as usize].ty;
+                        match arg_ty {
+                            Type::Int(_) => {
+                                self.fn_builder.ins().icmp(op.int_cond_code(arg_ty.is_signed()), lval,rval)
+                            },
+                            _ => panic!("can't compare {:?}",arg_ty)
                         }
-                    },
-                    _ => panic!("todo op {:?}",op)
-                })
+                    }
+                    
+                    _ => panic!("can't lower primitive op {:?} {:?}",op,ty)
+                });
+
+                if is_assign {
+                    self.lower_assign(*lhs,res_val );
+                }
+
+                res_val
             },
             Expr::UnOpPrimitive(arg,op) => {
                 let arg = self.lower_expr(*arg).unwrap();
@@ -273,7 +324,7 @@ impl<'a> JITFunc<'a> {
 
     fn lower_assign(&mut self, dest_id: u32, src: CVal) -> CVal {
         if let Some(src) = src {
-            let ExprInfo{expr,ty} = &self.code.exprs[dest_id as usize];
+            let ExprInfo{expr,ty,..} = &self.code.exprs[dest_id as usize];
             let cty = lower_type(*ty);
             match expr {
                 Expr::Var(var_id) => {

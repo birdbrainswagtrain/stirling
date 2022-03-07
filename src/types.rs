@@ -139,7 +139,7 @@ impl Type {
 
     pub fn can_upgrade_to(self, other: Type) -> bool {
         if self == other {
-            false
+            panic!("type equivilance should be checked before calling this");
         } else {
             match (self,other) {
                 (Type::Unknown,_) => true,

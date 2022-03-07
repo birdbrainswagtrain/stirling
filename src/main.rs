@@ -1,6 +1,7 @@
 
 mod hir_items;
 mod hir_expr;
+mod hir_check;
 mod types;
 mod jit;
 
@@ -35,7 +36,7 @@ fn main() {
 
         let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled_ptr) };
 
-        println!("res: {}",compiled_fn(1,5));
+        println!("res: {}",compiled_fn(5,1));
         //println!("=> {:?}",jit.compile(func.sig(),code));
     }
 }

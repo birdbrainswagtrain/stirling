@@ -1,8 +1,8 @@
 
-use syn::LitBool;
+use syn::{LitBool, BinOp};
 
 use crate::hir_items::{Scope, Item, ItemName};
-use crate::types::{Type, Signature};
+use crate::types::{Type, Signature, TypeInt};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,12 +15,13 @@ pub struct FuncCode{
 
 pub struct ExprInfo{
     pub expr: Expr,
-    pub ty: Type
+    pub ty: Type,
+    pub is_resolved: bool
 }
 
 impl ExprInfo{
     pub fn new(expr: Expr, ty: Type) -> ExprInfo {
-        ExprInfo{expr, ty}
+        ExprInfo{expr, ty, is_resolved: false}
     }
 }
 
@@ -35,10 +36,9 @@ impl FuncCode {
         body.add_args(&mut code, &syn_fn.sig, ty_sig);
         body.add_from_syn(&mut code, &syn_fn.block);
 
-        let root = code.push_expr(Expr::Block(Box::new(body)), Type::Unknown);
+        let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
         code.root_expr = root as usize;
 
-        code.update_expr_type(root as usize, ty_sig.output);
         code.check();
 
         code
@@ -48,189 +48,6 @@ impl FuncCode {
         let id = self.exprs.len() as u32;
         self.exprs.push(ExprInfo::new(expr,ty));
         id
-    }
-
-    pub fn check(&mut self) {
-
-        let mut mutated = true;
-
-        let mut step = 0;
-
-        while mutated {
-            mutated = false;
-
-            println!("=================== STEP {} ===================",step);
-            step += 1;
-            self.print();
-
-            for i in 0..self.exprs.len() {
-                let expr_info = &self.exprs[i];
-                if expr_info.ty.is_unknown() || expr_info.expr.needs_update() {
-                    if self.check_expr(i) {
-                        //println!("!!! {} {:?}",i,self.exprs[i].expr);
-                        mutated = true;
-                    }
-                }
-            }
-        }
-    }
-
-    fn check_binary_op_types(&mut self, parent: usize, child1: usize, child2: usize) -> bool {
-        let parent_ty = self.exprs[parent].ty;
-        let child1_ty = self.exprs[child1].ty;
-        let child2_ty = self.exprs[child2].ty;
-
-        if child1_ty != child2_ty || child1_ty != parent_ty {
-            if child2_ty.can_upgrade_to(child1_ty) {
-                if parent_ty.can_upgrade_to(child1_ty) {
-                    self.exprs[parent].ty = child1_ty;
-                }
-                self.update_expr_type(child2 as usize, child1_ty);
-            } else {
-                if parent_ty.can_upgrade_to(child2_ty) {
-                    self.exprs[parent].ty = child2_ty;
-                }
-                self.update_expr_type(child1 as usize, child2_ty);
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn check_unary_op_types(&mut self, parent: usize, arg: usize) -> bool {
-        let parent_ty = self.exprs[parent].ty;
-        let arg_ty = self.exprs[arg].ty;
-        if parent_ty.can_upgrade_to(arg_ty) {
-            self.exprs[parent].ty = arg_ty;
-            true
-        } else {
-            false
-        }
-    }
-
-    // returns true if anything was mutated
-    fn check_expr(&mut self, index: usize) -> bool {
-        let info = &self.exprs[index];
-
-        match info.expr {
-            Expr::LitInt(_x) => false,
-            Expr::Var(_x) => false,
-            Expr::Assign(dst,src) => {
-                self.check_binary_op_types(index, dst as usize, src as usize)
-            },
-            Expr::BinOpPrimitive(lhs,_op,rhs) => {
-                // not ALWAYS the right action:
-                //  logical ops need bools
-                //  bit shifts allow different sized args
-                self.check_binary_op_types(index, lhs as usize, rhs as usize)
-            },
-            Expr::BinOp(lhs,op,rhs) => {
-                let lty = self.exprs[lhs as usize].ty;
-                let rty = self.exprs[rhs as usize].ty;
-
-                if lty.is_number() && rty.is_number() {
-                    self.exprs[index].expr = Expr::BinOpPrimitive(lhs,op,rhs);
-                    // not ALWAYS the right action:
-                    //  logical ops need bools
-                    //  bit shifts allow different sized args
-                    self.check_binary_op_types(index, lhs as usize, rhs as usize);
-                    // always return true since we switch node types
-                    true
-                } else {
-                    panic!("todo more binary stuff");
-                }
-            },
-            Expr::UnOpPrimitive(arg,_op) => {
-                // should always be the right play
-                self.check_unary_op_types(index, arg as usize)
-            },
-            Expr::UnOp(arg,op) => {
-                let arg_ty = self.exprs[arg as usize].ty;
-                if arg_ty.is_number() {
-                    self.exprs[index].expr = Expr::UnOpPrimitive(arg,op);
-                    self.check_unary_op_types(index, arg as usize);
-                    // always return true since we switch node types
-                    true
-                } else {
-                    panic!("todo more unary stuff");
-                }
-            },
-
-            Expr::Block(ref block) => {
-                if let Some(result_id) = block.result {
-                    if self.exprs[index].ty.can_upgrade_to( self.exprs[result_id as usize].ty ) {
-                        self.exprs[index].ty = self.exprs[result_id as usize].ty;
-                        return true;
-                    }
-                }
-                false
-            },
-            Expr::IfElse(cond,ref then_block, else_expr) => {
-                let then_expr = then_block.result;
-
-                let mut result = self.update_expr_type(cond as usize,Type::Bool);
-
-                if let Some(then_expr) = then_expr {
-                    if self.check_binary_op_types(index, then_expr as usize, else_expr as usize) {
-                        result = true;
-                    }
-                } else {
-                    // else side must be void
-                    if self.update_expr_type(else_expr as usize, Type::Void) {
-                        result = true;
-                    }
-                    if self.exprs[index].ty.can_upgrade_to(Type::Void) {
-                        self.exprs[index].ty = Type::Void;
-                    }
-                }
-
-                result
-            },
-            _ => panic!("todo check {:?}",info.expr)
-        }
-    }
-
-    fn update_expr_type(&mut self, index: usize, ty: Type) -> bool {
-        if self.exprs[index].ty.can_upgrade_to(ty) {
-            self.exprs[index].ty = ty;
-            
-            let info = &self.exprs[index];
-            match info.expr {
-                Expr::Var(_x) => (),
-                Expr::Block(ref block) => {
-                    if let Some(res) = block.result {
-                        self.update_expr_type(res as usize, ty);
-                    } else {
-                        panic!("no result, asset ty = void");
-                    }
-                },
-                Expr::IfElse(_cond,ref then_block, else_expr) => {
-                    if let Some(then_expr) = then_block.result {
-                        self.update_expr_type(then_expr as usize, ty);
-                    } else {
-                        panic!("no result, asset ty = void");
-                    }
-                    self.update_expr_type(else_expr as usize, ty);
-                },
-                Expr::LitInt(_x) => {
-                    assert!(ty.is_int());
-                },
-                Expr::BinOp(..) => (), // can't do anything at this stage
-                Expr::BinOpPrimitive(lhs,_op,rhs) => {
-                    // todo this is NOT correct for all operators
-                    self.update_expr_type(lhs as usize, ty);
-                    self.update_expr_type(rhs as usize, ty);
-                },
-                Expr::UnOp(..) => (),
-                Expr::UnOpPrimitive(arg,_op) => {
-                    self.update_expr_type(arg as usize, ty);
-                },
-                _ => panic!("todo update {:?}",info.expr)
-            }
-            return true;
-        }
-        false
     }
 
     pub fn print(&self) {
@@ -313,7 +130,8 @@ impl Block {
 
         match syn_expr {
             syn::Expr::Paren(syn::ExprParen{expr,..}) => self.add_expr(code, expr),
-            syn::Expr::Binary(syn::ExprBinary{left,op,right,..}) => {
+            syn::Expr::Binary(syn::ExprBinary{left,op,right,..}) |
+            syn::Expr::AssignOp(syn::ExprAssignOp{left,op,right,..}) => {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
                 code.push_expr(Expr::BinOp(id_l,*op,id_r), Type::Unknown)
