@@ -31,7 +31,7 @@ impl FuncCode {
             step += 1;
             self.print();
 
-            if !self.check_step( 0..self.exprs.len() ) {
+            if self.check_step( 0..self.exprs.len() ) {
                 break;
             }
 
@@ -39,7 +39,7 @@ impl FuncCode {
             step += 1;
             self.print();
 
-            if !self.check_step( (0..self.exprs.len()).rev() ) {
+            if self.check_step( (0..self.exprs.len()).rev() ) {
                 break;
             }
         }
@@ -61,19 +61,19 @@ impl FuncCode {
     fn check_step<T: std::iter::Iterator<Item = usize> >(&mut self, iter: T) -> bool
     {
         let mut mutated = false;
+        let mut resolved = true;
 
         for i in iter {
             if !self.exprs[i].is_resolved {
                 let check_res = self.check_expr(i as u32);
 
                 self.exprs[i].is_resolved = check_res.resolved;
-                if check_res.mutated {
-                    mutated = true;
-                }
+                mutated = mutated || check_res.mutated;
+                resolved = resolved && check_res.resolved;
             }
         }
 
-        mutated
+        resolved || !mutated
     }
 
     // returns true if anything was mutated
@@ -134,7 +134,9 @@ impl FuncCode {
                 if let Some(result_id) = block.result {
                     self.check_match_2(index, result_id)
                 } else {
-                    panic!("set void");
+                    let mutated = self.update_expr_type(index, Type::Void);
+                    println!("update block type {} -> {} {:?}",index,mutated,self.exprs[index as usize].ty);
+                    CheckResult{mutated, resolved: true}
                 }
             },
             Expr::IfElse(cond,ref then_block, else_expr) => {
@@ -146,13 +148,9 @@ impl FuncCode {
                     self.check_match_3(index, then_expr, else_expr)
                 } else {
                     // else side must be void
-                    /*if self.update_expr_type(else_expr as usize, Type::Void) {
-                        result = true;
-                    }
-                    if self.exprs[index].ty.can_upgrade_to(Type::Void) {
-                        self.exprs[index].ty = Type::Void;
-                    }*/
-                    panic!("stop");
+                    let m1 = self.update_expr_type(else_expr, Type::Void);
+                    let m2 = self.update_expr_type(index, Type::Void);
+                    CheckResult{mutated: m1 || m2, resolved: true}
                 };
 
                 if mutated {

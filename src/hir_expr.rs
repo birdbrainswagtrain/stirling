@@ -1,11 +1,9 @@
 
-use syn::{LitBool, BinOp};
 
 use crate::hir_items::{Scope, Item, ItemName};
-use crate::types::{Type, Signature, TypeInt};
+use crate::types::{Type, Signature};
 
 use std::cell::RefCell;
-use std::rc::Rc;
 
 pub struct FuncCode{
     pub root_expr: usize,
@@ -26,13 +24,13 @@ impl ExprInfo{
 }
 
 impl FuncCode {
-    pub fn from_syn(syn_fn: &syn::ItemFn, ty_sig: &Signature, scope: &Scope) -> Self {
+    pub fn from_syn(syn_fn: &syn::ItemFn, ty_sig: &Signature, parent_scope: &'static RefCell<Scope>) -> Self {
         let mut code = FuncCode{
             root_expr: 0, // invalid, todo fill
             exprs: vec!(),
             vars: vec!()
         };
-        let mut body: Block = Default::default();
+        let mut body = Block::new(Some(parent_scope));
         body.add_args(&mut code, &syn_fn.sig, ty_sig);
         body.add_from_syn(&mut code, &syn_fn.block);
 
@@ -59,9 +57,9 @@ impl FuncCode {
     }
 }
 
-#[derive(Debug,Default)]
+#[derive(Debug)]
 pub struct Block{
-    scope: Rc<RefCell<Scope>>,
+    scope: &'static RefCell<Scope>,
     pub stmts: Vec<u32>,
     pub result: Option<u32>
 }
@@ -75,6 +73,14 @@ fn pat_to_name(pat: &syn::Pat) -> String {
 }
 
 impl Block {
+    pub fn new(parent_scope: Option<&'static RefCell<Scope>>) -> Block {
+        Block{
+            scope: Scope::new(parent_scope),
+            stmts: vec!(),
+            result: None
+        }
+    }
+
     pub fn add_args(&mut self, code: &mut FuncCode, syn_sig: &syn::Signature, sig: &Signature) {
         for (i,(syn_arg,ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
 
@@ -153,7 +159,7 @@ impl Block {
                     let item = scope.get(&name);
                     if let Some(res) = item {
                         if let Item::Local(id) = res {
-                            *id
+                            id
                         } else {
                             panic!("todo path-item {:?}",res);
                         }
@@ -183,7 +189,7 @@ impl Block {
                         assert!(ty.is_int());
                         code.push_expr(Expr::LitInt(n), ty)
                     },
-                    syn::Lit::Bool(LitBool{value,..}) => {
+                    syn::Lit::Bool(syn::LitBool{value,..}) => {
                         code.push_expr(Expr::LitBool(*value), Type::Bool)
                     },
                     _ => panic!("todo handle lit {:?}",lit)
@@ -191,12 +197,12 @@ impl Block {
             },
             // control flow-ish stuff
             syn::Expr::Block(syn::ExprBlock{block,..}) => {
-                let hir_block = Block::from_syn(code, block);
+                let hir_block = self.child_block_from_syn(code, block);
                 code.push_expr(Expr::Block(hir_block), Type::Unknown)
             },
             syn::Expr::If(syn::ExprIf{cond,then_branch,else_branch,..}) => {
                 let id_cond = self.add_expr(code, cond);
-                let then_block = Block::from_syn(code, then_branch);
+                let then_block = self.child_block_from_syn(code, then_branch);
                 if let Some((_,else_branch)) = else_branch {
                     let id_else = self.add_expr(code, else_branch);
                     code.push_expr(Expr::IfElse(id_cond,then_block,id_else), Type::Unknown)
@@ -209,8 +215,8 @@ impl Block {
         }
     }
 
-    fn from_syn(code: &mut FuncCode, syn_block: &syn::Block) -> Box<Block> {
-        let mut block: Block = Default::default();
+    fn child_block_from_syn(&self, code: &mut FuncCode, syn_block: &syn::Block) -> Box<Block> {
+        let mut block = Block::new(Some(self.scope));
         block.add_from_syn(code, &syn_block);
         Box::new(block)
     }

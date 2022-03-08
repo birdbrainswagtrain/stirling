@@ -7,7 +7,7 @@ use syn::{BinOp, UnOp};
 
 use crate::{hir_expr::{FuncCode, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
 
-type CType = cranelift::prelude::Type;
+type CType = Option<cranelift::prelude::Type>;
 type CVal = Option<Value>;
 
 pub struct JIT {
@@ -68,18 +68,23 @@ impl JIT {
     fn lower_sig(&mut self, sig: &Signature) {
 
         for ty in &sig.inputs {
-            self.ctx.func.signature.params.push(AbiParam::new(lower_type(*ty)));
+            if let Some(cty) = lower_type(*ty) {
+                self.ctx.func.signature.params.push(AbiParam::new(cty));
+            }
         }
 
-        self.ctx.func.signature.returns.push(AbiParam::new(lower_type(sig.output)));
+        if let Some(cty) = lower_type(sig.output) {
+            self.ctx.func.signature.returns.push(AbiParam::new(cty));
+        }
     }
 }
 
 fn lower_type(ty: Type) -> CType {
     match ty {
-        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => types::I32,
-        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => types::I16,
-        Type::Bool => types::B1,
+        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
+        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
+        Type::Bool => Some(types::B1),
+        Type::Void => None,
         _ => panic!("unknown type")
     }
 }
@@ -88,13 +93,14 @@ fn lower_type(ty: Type) -> CType {
 enum LowBinOp {
     Add, Sub, Mul, Div, Rem,
     //BitAnd, BitOr, BitXor
-    Gt
+    Gt, Lt
 }
 
 impl LowBinOp {
     fn int_cond_code(&self, sign: bool) -> IntCC {
         match (self,sign) {
             (LowBinOp::Gt,true) => IntCC::SignedGreaterThan,
+            (LowBinOp::Lt,true) => IntCC::SignedLessThan,
             _ => panic!("cond code for {:?} {}",self,sign)
         }
     }
@@ -115,6 +121,8 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
         BinOp::RemEq(_) =>  (LowBinOp::Rem, true),
 
         BinOp::Gt(_) => (LowBinOp::Gt, false),
+        BinOp::Lt(_) => (LowBinOp::Lt, false),
+
         _ => panic!("can't lower op {:?}",op)
     }
 }
@@ -131,9 +139,11 @@ impl<'a> JITFunc<'a> {
         for index in self.code.vars.iter() {
             let ExprInfo{expr,ty,..} = &self.code.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
-                let var = Variable::new(*var_id as usize);
                 let cty = lower_type(*ty);
-                self.fn_builder.declare_var(var, cty);
+                if let Some(cty) = lower_type(*ty) {
+                    let var = Variable::new(*var_id as usize);
+                    self.fn_builder.declare_var(var, cty);
+                }
             } else {
                 panic!("can not create var from {:?}",expr);
             }
@@ -182,13 +192,13 @@ impl<'a> JITFunc<'a> {
                     } else if size_src < size_dest {
                         // widening: our type of extension is determined by the source type
                         if src_ty.is_signed() {
-                            Some( self.fn_builder.ins().sextend(cty,arg) )
+                            Some( self.fn_builder.ins().sextend(cty.unwrap(),arg) )
                         } else {
-                            Some( self.fn_builder.ins().uextend(cty,arg) )
+                            Some( self.fn_builder.ins().uextend(cty.unwrap(),arg) )
                         }
                     } else {
                         // narrowing
-                        Some( self.fn_builder.ins().ireduce(cty,arg) )
+                        Some( self.fn_builder.ins().ireduce(cty.unwrap(),arg) )
                     }
                 } else {
                     panic!("non integer casts nyi");
@@ -220,7 +230,7 @@ impl<'a> JITFunc<'a> {
                         } else {
                             self.fn_builder.ins().urem(lval,rval)
                         },
-                    (_,LowBinOp::Gt) => {
+                    (_,LowBinOp::Gt) | (_,LowBinOp::Lt) => {
                         let arg_ty = self.code.exprs[*lhs as usize].ty;
                         match arg_ty {
                             Type::Int(_) => {
@@ -251,13 +261,13 @@ impl<'a> JITFunc<'a> {
                 // TODO we assume the int is register-sized
                 let x: Result<i64,_> = (*x).try_into();
                 if let Ok(n) = x {
-                    Some( self.fn_builder.ins().iconst(cty,n) )
+                    Some( self.fn_builder.ins().iconst(cty.unwrap(),n) )
                 } else {
                     panic!("int too wide");
                 }
             },
             Expr::LitBool(x) => {
-                Some( self.fn_builder.ins().bconst(cty,*x) )
+                Some( self.fn_builder.ins().bconst(cty.unwrap(),*x) )
             },
             Expr::Block(block) => {
                 self.lower_block(block)
@@ -297,7 +307,7 @@ impl<'a> JITFunc<'a> {
                 self.fn_builder.switch_to_block(final_cb);
                 self.fn_builder.seal_block(final_cb);
                 
-                let res = if *ty != Type::Void {
+                let res = if let Some(cty) = cty {
                     self.fn_builder.append_block_param(final_cb, cty);
                     Some( self.fn_builder.block_params(final_cb)[0] )
                 } else {

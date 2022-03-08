@@ -6,24 +6,27 @@ use once_cell::unsync::OnceCell;
 
 use crate::{hir_expr::FuncCode, types::Signature};
 
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy)]
 pub enum Item{
-    Fn(Function),
+    Fn(&'static Function),
     Local(u32)
 }
 
 impl Item {
-    fn from_syn(syn_item: syn::Item, scope: &Rc<RefCell<Scope>>) -> (ItemName,Item) {
+    fn from_syn(syn_item: syn::Item, scope: &'static RefCell<Scope>) -> (ItemName,Item) {
         match syn_item {
             syn::Item::Fn(syn_fn) => {
-                
                 let name = ItemName::Value(syn_fn.sig.ident.to_string());
-                let item = Item::Fn(Function{
+
+                let func = Box::new(Function{
                     syn_fn,
-                    parent_scope: Rc::downgrade(scope),
+                    parent_scope: scope,
                     sig: OnceCell::new(),
                     code: OnceCell::new()
                 });
+                let func = Box::leak(func);
+
+                let item = Item::Fn(func);
                 (name,item)
             },
             _ => panic!("todo handle item => {:?}",syn_item)
@@ -33,7 +36,7 @@ impl Item {
 
 pub struct Function{
     syn_fn: syn::ItemFn,
-    parent_scope: Weak<RefCell<Scope>>,
+    parent_scope: &'static RefCell<Scope>,
     sig: OnceCell<Signature>, // todo once-cell?
     code: OnceCell<FuncCode>  // todo once-cell?
 }
@@ -50,8 +53,7 @@ impl Function {
     // - the the scope chain
     pub fn sig(&self) -> &Signature {
         self.sig.get_or_init(|| {
-            let scope_rc = self.parent_scope.upgrade().unwrap();
-            let scope = scope_rc.borrow();
+            let scope = self.parent_scope.borrow();
             Signature::from_syn(&self.syn_fn.sig, &scope)
         })
     }
@@ -60,9 +62,7 @@ impl Function {
         let sig = self.sig();
 
         self.code.get_or_init(|| {
-            let scope_rc = self.parent_scope.upgrade().unwrap();
-            let scope = scope_rc.borrow();
-            FuncCode::from_syn(&self.syn_fn, sig, &scope)
+            FuncCode::from_syn(&self.syn_fn, sig, self.parent_scope)
         })
     }
 }
@@ -82,28 +82,41 @@ pub fn try_path_to_name(path: &syn::Path) -> Option<String> {
     }
 }
 
-#[derive(Debug,Default)]
+#[derive(Debug)]
 pub struct Scope {
     map: HashMap<ItemName,Item>,
-    parent: Weak<Scope>
+    parent: Option<&'static RefCell<Scope>>
 }
 
 impl Scope{
+    pub fn new(parent: Option<&'static RefCell<Scope>>) -> &'static RefCell<Scope> {
+        let scope = Box::new(RefCell::new(Scope{
+            map: HashMap::new(),
+            parent
+        }));
+        let scope: &'static _ = Box::leak(scope);
+        scope
+    }
+
     pub fn declare(&mut self, key: ItemName, value: Item) {
         if self.map.insert(key, value).is_some() {
             panic!("duplicate declaration");
         }
     }
 
-    pub fn get(&self, key: &ItemName) -> Option<&Item> {
-        self.map.get(key)
+    pub fn get(&self, key: &ItemName) -> Option<Item> {
+        let res = self.map.get(key).map(|x| *x);
+        if res.is_none() {
+            if let Some(parent) = self.parent {
+                return parent.borrow().get(key);
+            }
+        }
+        res
     }
 
-    pub fn from_syn_file(syn_file: syn::File) -> Rc<RefCell<Scope>> {
-        let mut scope = Rc::new(RefCell::new(Scope{
-            map: HashMap::new(),
-            parent: Weak::new() // todo should be crate root?
-        }));
+    pub fn from_syn_file(syn_file: syn::File) -> &'static RefCell<Scope> {
+        let scope = Self::new(None);
+
         for syn_item in syn_file.items {
             let (k,v) = Item::from_syn(syn_item,&scope);
             scope.borrow_mut().declare(k, v);
