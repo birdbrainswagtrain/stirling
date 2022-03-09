@@ -211,6 +211,11 @@ impl Block {
                     panic!("single-side if");
                 }
             },
+            syn::Expr::While(syn::ExprWhile{cond,body,..}) => {
+                let id_cond = self.add_expr(code, cond);
+                let body_block = self.child_block_from_syn(code, body);
+                code.push_expr(Expr::While(id_cond,body_block), Type::Void)
+            },
             _ => panic!("todo handle expr => {:?}",syn_expr)
         }
     }
@@ -236,15 +241,6 @@ pub enum Expr{
     Assign(u32,u32),
     CastPrimitive(u32),
     If(u32,Box<Block>),
-    IfElse(u32,Box<Block>,u32)
-}
-
-impl Expr {
-    fn needs_update(&self) -> bool {
-        match self {
-            Expr::BinOp(..) => true,
-            Expr::UnOp(..) => true,
-            _ => false
-        }
-    }
+    IfElse(u32,Box<Block>,u32),
+    While(u32,Box<Block>)
 }

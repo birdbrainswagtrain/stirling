@@ -316,6 +316,36 @@ impl<'a> JITFunc<'a> {
 
                 res
             },
+            Expr::While(cond,body_block) => {
+                let cond_cb = self.fn_builder.create_block();
+                let body_cb = self.fn_builder.create_block();
+                let final_cb = self.fn_builder.create_block();
+
+                self.fn_builder.ins().jump(cond_cb, &[]);
+
+                // cond block
+                self.fn_builder.switch_to_block(cond_cb);
+
+                let cond = self.lower_expr(*cond).unwrap();
+
+                self.fn_builder.ins().brnz(cond, body_cb, &[]);
+                self.fn_builder.ins().jump(final_cb, &[]);
+
+                self.fn_builder.seal_block(body_cb);
+                self.fn_builder.seal_block(final_cb);
+
+                // body block
+                self.fn_builder.switch_to_block(body_cb);
+                self.lower_block(body_block);
+                self.fn_builder.ins().jump(cond_cb, &[]);
+
+                self.fn_builder.seal_block(cond_cb);
+
+                // switch to final block
+                self.fn_builder.switch_to_block(final_cb);
+
+                None
+            },
             _ => panic!("todo lower expr {:?}",expr)
         }
     }

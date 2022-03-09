@@ -6,10 +6,15 @@ mod types;
 mod jit;
 
 
+use std::time::Instant;
+
 use crate::{hir_items::{Scope, ItemName, Item}};
 use jit::JIT;
 
+const VERBOSE: bool = false;
+
 fn main() {
+    let start = Instant::now();
     let file_string = std::fs::read_to_string("test/add.rs").expect("failed to read source file");
 
     let syn_tree: syn::File = syn::parse_str(&file_string).expect("failed to parse source code");
@@ -25,18 +30,35 @@ fn main() {
         let mut jit: JIT = Default::default();
 
         let (compiled_ptr,compiled_size) = jit.compile(func.sig(),code).unwrap();
-        {
+        println!("Build Time: {:?}",start.elapsed());
+
+        if VERBOSE {
             let compiled_slice = unsafe { std::slice::from_raw_parts(compiled_ptr,compiled_size) };
-            print!("code: ");
-            for x in compiled_slice {
-                print!("{:02x}",x);
-            }
-            println!();
+            disassemble(compiled_slice);
         }
 
         let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled_ptr) };
 
-        println!("res: {}",compiled_fn(5,1));
-        //println!("=> {:?}",jit.compile(func.sig(),code));
+        let start = Instant::now();
+        let res = compiled_fn(10000,100_000_000);
+        println!("Exec Time: {:?}",start.elapsed());
+        println!("Result: {}",res);
+    }
+}
+
+fn disassemble(code: &[u8]) {
+    use iced_x86::{Decoder,DecoderOptions,IntelFormatter,Formatter,Instruction};
+    let mut decoder = Decoder::new(64, code, DecoderOptions::NONE);
+    decoder.set_ip(0x1000);
+
+    let mut formatter = IntelFormatter::new();
+
+    let mut instruction = Instruction::default();
+    let mut output = String::new();
+    while decoder.can_decode() {
+        output.clear();
+        decoder.decode_out(&mut instruction);
+        formatter.format(&instruction, &mut output);
+        println!("  {:02x}  {}",instruction.ip(),output);
     }
 }

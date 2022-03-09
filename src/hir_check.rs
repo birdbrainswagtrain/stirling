@@ -23,21 +23,25 @@ impl CheckResult {
 
 impl FuncCode {
     pub fn check(&mut self) {
-
+        
         let mut step = 0;
-
+        
         loop {
-            println!("=================== STEP {} ===================",step);
-            step += 1;
-            self.print();
+            if crate::VERBOSE {
+                println!("=================== STEP {} ===================",step);
+                step += 1;
+                self.print();
+            }
 
             if self.check_step( 0..self.exprs.len() ) {
                 break;
             }
 
-            println!("=================== STEP {} ===================",step);
-            step += 1;
-            self.print();
+            if crate::VERBOSE {
+                println!("=================== STEP {} ===================",step);
+                step += 1;
+                self.print();
+            }
 
             if self.check_step( (0..self.exprs.len()).rev() ) {
                 break;
@@ -54,8 +58,10 @@ impl FuncCode {
                 }
             }
         }
-        println!("=================== FINAL ===================");
-        self.print();
+        if crate::VERBOSE {
+            println!("=================== FINAL ===================");
+            self.print();
+        }
     }
 
     fn check_step<T: std::iter::Iterator<Item = usize> >(&mut self, iter: T) -> bool
@@ -158,6 +164,18 @@ impl FuncCode {
                 }
 
                 res
+            },
+            Expr::While(cond,ref body_block) => {
+                let body_expr = body_block.result;
+
+                let m1 = self.update_expr_type(cond,Type::Bool);
+                let m2 = if let Some(body_expr) = body_expr {
+                    self.update_expr_type(body_expr,Type::Void)
+                } else {
+                    false
+                };
+
+                CheckResult{mutated: m1 || m2, resolved: true}
             },
             _ => panic!("todo check {:?}",info.expr)
         }

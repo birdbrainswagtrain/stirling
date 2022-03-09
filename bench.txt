@@ -1,0 +1,22 @@
+===> Ziz
+
+cargo build --release && time ./target/release/ziz
+
+Build Time: 539µs
+Exec Time: 693.3018ms
+
+===> rustc debug
+
+time rustc add.rs
+time ./add
+
+build   0m0.253s
+exec    0m1.100s
+
+===> rustc release
+
+time rustc add.rs -O
+time ./add
+
+build   0m0.263s
+exec    0m0.127s
