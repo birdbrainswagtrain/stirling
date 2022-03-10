@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use cranelift::codegen::Context;
 use cranelift::frontend::{FunctionBuilderContext, FunctionBuilder};
@@ -26,13 +27,20 @@ fn ptr_ty() -> cranelift::prelude::Type {
     types::I64
 }
 
-pub fn jit_compile(func: &Function) {
+pub fn jit_compile(func: &Function) -> *const u8 {
+    let start = Instant::now();
     let result = JIT_CONTEXT.with(|rc| {
         let mut jit = rc.borrow_mut();
         jit.compile(func)
     });
+    println!("JIT: {} {:?}",func.debug_name,start.elapsed());
+    
     match result {
-        Ok(ptr) => func.c_fn.set(ptr),
+        Ok(ptr) => {
+            func.c_fn.set(ptr);
+
+            ptr
+        },
         Err(msg) => panic!("jit error: {}",msg)
     }
 }
@@ -90,7 +98,8 @@ impl JIT {
         let ir = func.ir();
         self.ctx.func.signature = lower_sig(sig);
 
-        let fn_id = self.module.declare_function("func", Linkage::Export, &self.ctx.func.signature)
+        let fn_name = format!("skitter_{}",func as *const Function as usize);
+        let fn_id = self.module.declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
         {
@@ -126,6 +135,7 @@ fn lower_type(ty: Type) -> CType {
     match ty {
         Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
         Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
+        Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
         Type::Bool => Some(types::B1),
         Type::Void => None,
         _ => panic!("unknown type")
@@ -204,7 +214,6 @@ impl<'a> JITFunc<'a> {
         for index in self.input_fn.vars.iter() {
             let ExprInfo{expr,ty,..} = &self.input_fn.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
-                let cty = lower_type(*ty);
                 if let Some(cty) = lower_type(*ty) {
                     let var = Variable::new(*var_id as usize);
                     self.fn_builder.declare_var(var, cty);
@@ -426,25 +435,48 @@ impl<'a> JITFunc<'a> {
                     }
                 }
 
-                let call_res = self.fn_builder.ins().call(fn_ref,&c_args);
+                let call_inst = self.fn_builder.ins().call(fn_ref,&c_args);
 
-                let results = self.fn_builder.inst_results(call_res);
-                if results.len() > 0 {
-                    Some( results[0] )
+                let call_res = self.fn_builder.inst_results(call_inst);
+                if call_res.len() > 0 {
+                    Some( call_res[0] )
                 } else {
                     None
                 }
             },
             Expr::Call(func,args) => {
+                let jit_cb = self.fn_builder.create_block();
+                let next_cb = self.fn_builder.create_block();
+
                 let c_sig = lower_sig(func.sig());
-                let ret_count = c_sig.returns.len();
                 let sig_id = self.fn_builder.import_signature(c_sig);
 
                 let data_ptr = *func as *const Function;
                 let data_val = self.fn_builder.ins().iconst(ptr_ty(), data_ptr as i64 );
                 let fn_val = self.fn_builder.ins().load(ptr_ty(),MemFlags::trusted(),data_val,0);
 
-                self.fn_builder.ins().trapz(fn_val,TrapCode::IndirectCallToNull);
+                self.fn_builder.ins().brz(fn_val,jit_cb,&[]);
+                self.fn_builder.ins().jump(next_cb,&[fn_val]);
+
+                // jit long-path
+                {
+                    self.fn_builder.seal_block(jit_cb);
+                    self.fn_builder.switch_to_block(jit_cb);
+
+                    let jit_id = self.builtins.get("jit_compile").expect("failed to lookup builtin id");
+                    let jit_ref = self.module.declare_func_in_func(*jit_id, self.fn_builder.func);
+
+                    let jit_inst = self.fn_builder.ins().call(jit_ref,&[data_val]);
+                    let fn_val = self.fn_builder.inst_results(jit_inst)[0];
+
+                    self.fn_builder.ins().jump(next_cb,&[fn_val]);
+                }
+                
+                self.fn_builder.seal_block(next_cb);
+                self.fn_builder.switch_to_block(next_cb);
+
+                self.fn_builder.append_block_param(next_cb, ptr_ty());
+                let fn_val = self.fn_builder.block_params(next_cb)[0];
 
                 let mut c_args = Vec::new();
                 for arg in args {
@@ -453,10 +485,11 @@ impl<'a> JITFunc<'a> {
                     }
                 }
 
-                let call_res = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
+                let call_inst = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
 
-                if ret_count > 0 {
-                    Some( self.fn_builder.inst_results(call_res)[0] )
+                let call_res = self.fn_builder.inst_results(call_inst);
+                if call_res.len() > 0 {
+                    Some( call_res[0] )
                 } else {
                     None
                 }

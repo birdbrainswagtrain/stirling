@@ -12,7 +12,7 @@ use crate::{hir_item::{Scope, ItemName, Item}, jit::jit_compile};
 use memoffset::offset_of;
 
 const PTR_WIDTH: usize = 8;
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 fn main() {
     check_abi();

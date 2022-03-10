@@ -7,15 +7,18 @@ fn add(x: i32, y: i32) -> i32 {
         i += 1;
         sum += x;
         sum /= 2;
-    }
+    };
     sum
+}
+
+fn bad() {
+    "it doesn't even support strings" >> lmao
 }
 
 fn main() {
     let res1 = 100 + 50 + 1;
     _skitter_builtin::print_i32(res1);
-    _skitter_builtin::print_i32(521);
-    _skitter_builtin::print_i32(222);
-    _skitter_builtin::print_i32(1001);
-    let res2 = add(10000,100_000_000);
+    let res2 = add(1000,100_000_000);
+    _skitter_builtin::print_i32(res2);
+    bad();
 }

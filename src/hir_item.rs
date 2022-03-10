@@ -16,9 +16,12 @@ impl Item {
     fn from_syn(syn_item: syn::Item, scope: &'static RefCell<Scope>) -> (ItemName,Item) {
         match syn_item {
             syn::Item::Fn(syn_fn) => {
-                let name = ItemName::Value(syn_fn.sig.ident.to_string());
+                let base_name = syn_fn.sig.ident.to_string();
+                let debug_name = base_name.clone();
+                let name = ItemName::Value(base_name);
 
                 let func = Box::new(Function{
+                    debug_name,
                     c_fn: Cell::new(std::ptr::null()),
 
                     syn_fn,
@@ -44,7 +47,8 @@ impl Item {
 #[repr(C)]
 pub struct Function{
     pub c_fn: Cell<*const u8>,
-
+    pub debug_name: String,
+    
     syn_fn: syn::ItemFn,
     parent_scope: &'static RefCell<Scope>,
     sig: OnceCell<Signature>, // todo once-cell?
