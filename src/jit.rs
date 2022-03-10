@@ -1,17 +1,18 @@
 // based loosly on https://github.com/bytecodealliance/cranelift-jit-demo/blob/main/src/jit.rs
 
-use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::result;
+use std::collections::HashMap;
 
 use cranelift::codegen::Context;
 use cranelift::frontend::{FunctionBuilderContext, FunctionBuilder};
+use cranelift::prelude::{MemFlags, TrapCode};
 use cranelift::prelude::{Value, Variable, AbiParam, types, IntCC, isa::CallConv, EntityRef, InstBuilder};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Module, DataContext, Linkage};
+use cranelift_module::{Module, DataContext, Linkage, FuncId};
 use syn::{BinOp, UnOp};
 
 use crate::PTR_WIDTH;
+use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
 use crate::hir_item::Function;
 use crate::{hir_expr::{FuncIR, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
@@ -44,23 +45,41 @@ pub struct JIT {
     module: JITModule,
     ctx: Context,
     builder_ctx: FunctionBuilderContext,
-    data_ctx: DataContext
+    data_ctx: DataContext,
+    builtins: HashMap<String,FuncId>
 }
 
 impl Default for JIT {
     fn default() -> Self {
-        let jit_builder = JITBuilder::new(cranelift_module::default_libcall_names());
-        let module = JITModule::new(jit_builder);
+        let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names());
+
+        for (key,(ptr,_)) in BUILTINS.iter() {
+            let name = format!("builtin_{}",key);
+            jit_builder.symbol(name, *ptr as *const u8);
+        }
+
+        let mut builtins = HashMap::new();
+        let mut module = JITModule::new(jit_builder);
+        for (key,(_,sig)) in BUILTINS.iter() {
+            let name = format!("builtin_{}",key);
+            let csig = lower_sig(sig);
+            let fn_id = module.declare_function(&name, Linkage::Import, &csig).expect("failed to declare builtin");
+            builtins.insert(String::from(*key), fn_id);
+        }
 
         let ctx = module.make_context();
         let builder_ctx = FunctionBuilderContext::new();
         let data_ctx = DataContext::new();
 
+
+        //let fn_id = self.module.declare_function("func", Linkage::Export, &self.ctx.func.signature)
+
         Self{
             module,
             ctx,
             builder_ctx,
-            data_ctx
+            data_ctx,
+            builtins
         }
     }
 }
@@ -77,7 +96,9 @@ impl JIT {
         {
             let mut jit_func = JITFunc{
                 input_fn: ir,
-                fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx)
+                fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
+                module: &self.module,
+                builtins: &self.builtins
             };
 
             jit_func.compile();
@@ -172,6 +193,8 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
 struct JITFunc<'a> {
     input_fn: &'a FuncIR,
     fn_builder: FunctionBuilder<'a>,
+    module: &'a JITModule,
+    builtins: &'a HashMap<String,FuncId>
 }
 
 impl<'a> JITFunc<'a> {
@@ -392,13 +415,9 @@ impl<'a> JITFunc<'a> {
 
                 None
             },
-            Expr::CallBuiltin(bi,args) => {
-                let c_sig = lower_sig(&bi.signature());
-                let ret_count = c_sig.returns.len();
-                let sig_id = self.fn_builder.import_signature(c_sig);
-
-                let ptr = bi.fn_ptr();
-                let fn_val = self.fn_builder.ins().iconst(ptr_ty(), ptr as i64 );
+            Expr::CallBuiltin(name,args) => {
+                let fn_id = self.builtins.get(name).expect("failed to lookup builtin id");
+                let fn_ref = self.module.declare_func_in_func(*fn_id, self.fn_builder.func);
 
                 let mut c_args = Vec::new();
                 for arg in args {
@@ -407,10 +426,37 @@ impl<'a> JITFunc<'a> {
                     }
                 }
 
-                let _call_res = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
+                let call_res = self.fn_builder.ins().call(fn_ref,&c_args);
+
+                let results = self.fn_builder.inst_results(call_res);
+                if results.len() > 0 {
+                    Some( results[0] )
+                } else {
+                    None
+                }
+            },
+            Expr::Call(func,args) => {
+                let c_sig = lower_sig(func.sig());
+                let ret_count = c_sig.returns.len();
+                let sig_id = self.fn_builder.import_signature(c_sig);
+
+                let data_ptr = *func as *const Function;
+                let data_val = self.fn_builder.ins().iconst(ptr_ty(), data_ptr as i64 );
+                let fn_val = self.fn_builder.ins().load(ptr_ty(),MemFlags::trusted(),data_val,0);
+
+                self.fn_builder.ins().trapz(fn_val,TrapCode::IndirectCallToNull);
+
+                let mut c_args = Vec::new();
+                for arg in args {
+                    if let Some(val) = self.lower_expr(*arg) {
+                        c_args.push(val);
+                    }
+                }
+
+                let call_res = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
 
                 if ret_count > 0 {
-                    panic!("stop");
+                    Some( self.fn_builder.inst_results(call_res)[0] )
                 } else {
                     None
                 }

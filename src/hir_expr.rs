@@ -1,8 +1,6 @@
 
-
-use crate::builtin::Builtin;
 use crate::hir_item::{Scope, Item, ItemName, Function};
-use crate::types::{Type, Signature, TypeInt};
+use crate::types::{Type, Signature};
 
 use std::cell::RefCell;
 
@@ -81,15 +79,12 @@ fn path_to_name(path: &syn::Path) -> Option<String> {
     }
 }
 
-fn path_to_builtin(path: &syn::Path) -> Option<Builtin> {
+fn path_to_builtin(path: &syn::Path) -> Option<String> {
     if path.segments.len() == 2 {
         let p1= path.segments[0].ident.to_string();
         if p1 == "_skitter_builtin" {
-            let p2= path.segments[1].ident.to_string();
-            return Some(match p2.as_str() {
-                "print_i32" => Builtin::PrintI32,
-                _ => panic!("bad builtin {}",p2)
-            })
+            let p2 = path.segments[1].ident.to_string();
+            return Some(p2);
         }
     }
     None
@@ -293,5 +288,5 @@ pub enum Expr{
     IfElse(u32,Box<Block>,u32),
     While(u32,Box<Block>),
     Call(&'static Function,Vec<u32>),
-    CallBuiltin(Builtin,Vec<u32>)
+    CallBuiltin(String,Vec<u32>)
 }

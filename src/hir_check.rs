@@ -1,5 +1,5 @@
 
-use crate::{hir_expr::{FuncIR, Expr}, types::{Type, TypeInt, Signature}};
+use crate::{hir_expr::{FuncIR, Expr}, types::{Type, TypeInt, Signature}, builtin::BUILTINS};
 
 #[derive(Clone,Copy)]
 struct CheckResult{
@@ -176,12 +176,18 @@ impl FuncIR {
 
                 CheckResult{mutated: m1 || m2, resolved: true}
             },
-            Expr::CallBuiltin(bi,ref args) => {
-                let sig = bi.signature();
+            Expr::CallBuiltin(ref name,ref args) => {
+                let sig = &BUILTINS.get(name.as_str()).unwrap().1;
                 let args = args.clone(); // TODO BAD CLONE
 
-                self.check_function(index,&args,&sig)
+                self.check_function(index,&args,sig)
             },
+            Expr::Call(func,ref args) => {
+                let sig = func.sig();
+                let args = args.clone(); // TODO BAD CLONE
+
+                self.check_function(index,&args,sig)
+            }
             _ => panic!("todo check {:?}",info.expr)
         }
     }
