@@ -1,5 +1,5 @@
 [package]
-name = "ziz"
+name = "skitter"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 syn = {version = "1.0.86", features=["full","visit","extra-traits"]}
 once_cell = "1.9.0"
+memoffset = "0.6.5"
 
 cranelift = "0.81.0"
 cranelift-module = "0.81.0"

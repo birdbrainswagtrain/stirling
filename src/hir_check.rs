@@ -1,5 +1,5 @@
 
-use crate::{hir_expr::{FuncCode, Expr}, types::{Type, TypeInt}};
+use crate::{hir_expr::{FuncIR, Expr}, types::{Type, TypeInt, Signature}};
 
 #[derive(Clone,Copy)]
 struct CheckResult{
@@ -21,7 +21,7 @@ impl CheckResult {
     }
 }
 
-impl FuncCode {
+impl FuncIR {
     pub fn check(&mut self) {
         
         let mut step = 0;
@@ -141,7 +141,6 @@ impl FuncCode {
                     self.check_match_2(index, result_id)
                 } else {
                     let mutated = self.update_expr_type(index, Type::Void);
-                    println!("update block type {} -> {} {:?}",index,mutated,self.exprs[index as usize].ty);
                     CheckResult{mutated, resolved: true}
                 }
             },
@@ -177,8 +176,32 @@ impl FuncCode {
 
                 CheckResult{mutated: m1 || m2, resolved: true}
             },
+            Expr::CallBuiltin(bi,ref args) => {
+                let sig = bi.signature();
+                let args = args.clone(); // TODO BAD CLONE
+
+                self.check_function(index,&args,&sig)
+            },
             _ => panic!("todo check {:?}",info.expr)
         }
+    }
+
+    fn check_function(&mut self, index: u32, args: &Vec<u32>, sig: &Signature) -> CheckResult {
+        assert_eq!(args.len(),sig.inputs.len());
+                
+        let mut mutated = false;
+
+        for (arg,ty) in args.iter().zip(&sig.inputs) {
+            if self.update_expr_type(*arg,*ty) {
+                mutated = true;
+            }
+        }
+
+        if self.update_expr_type(index,sig.output) {
+            mutated = true;
+        }
+
+        CheckResult{mutated, resolved: true}
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
@@ -288,46 +311,3 @@ fn op_kind(op: &syn::BinOp) -> OpKind {
         _ => panic!("todo op kind {:?}",op)
     }
 }
-
-
-    /*fn update_expr_type(&mut self, index: usize, ty: Type) -> bool {
-        if self.exprs[index].ty.can_upgrade_to(ty) {
-            self.exprs[index].ty = ty;
-            
-            let info = &self.exprs[index];
-            match info.expr {
-                Expr::Var(_x) => (),
-                Expr::Block(ref block) => {
-                    if let Some(res) = block.result {
-                        self.update_expr_type(res as usize, ty);
-                    } else {
-                        panic!("no result, asset ty = void");
-                    }
-                },
-                Expr::IfElse(_cond,ref then_block, else_expr) => {
-                    if let Some(then_expr) = then_block.result {
-                        self.update_expr_type(then_expr as usize, ty);
-                    } else {
-                        panic!("no result, asset ty = void");
-                    }
-                    self.update_expr_type(else_expr as usize, ty);
-                },
-                Expr::LitInt(_x) => {
-                    assert!(ty.is_int());
-                },
-                Expr::BinOp(..) => (), // can't do anything at this stage
-                Expr::BinOpPrimitive(lhs,_op,rhs) => {
-                    // todo this is NOT correct for all operators
-                    self.update_expr_type(lhs as usize, ty);
-                    self.update_expr_type(rhs as usize, ty);
-                },
-                Expr::UnOp(..) => (),
-                Expr::UnOpPrimitive(arg,_op) => {
-                    self.update_expr_type(arg as usize, ty);
-                },
-                _ => panic!("todo update {:?}",info.expr)
-            }
-            return true;
-        }
-        false
-    }*/

@@ -1,15 +1,44 @@
 // based loosly on https://github.com/bytecodealliance/cranelift-jit-demo/blob/main/src/jit.rs
 
-use cranelift::{prelude::*, codegen::Context};
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::result;
+
+use cranelift::codegen::Context;
+use cranelift::frontend::{FunctionBuilderContext, FunctionBuilder};
+use cranelift::prelude::{Value, Variable, AbiParam, types, IntCC, isa::CallConv, EntityRef, InstBuilder};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Module, DataContext, Linkage};
 use syn::{BinOp, UnOp};
 
+use crate::PTR_WIDTH;
 use crate::disassemble::disassemble;
-use crate::{hir_expr::{FuncCode, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
+use crate::hir_item::Function;
+use crate::{hir_expr::{FuncIR, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
 
+type CSignature = cranelift::prelude::Signature;
 type CType = Option<cranelift::prelude::Type>;
 type CVal = Option<Value>;
+
+fn ptr_ty() -> cranelift::prelude::Type {
+    assert!(PTR_WIDTH == 8);
+    types::I64
+}
+
+pub fn jit_compile(func: &Function) {
+    let result = JIT_CONTEXT.with(|rc| {
+        let mut jit = rc.borrow_mut();
+        jit.compile(func)
+    });
+    match result {
+        Ok(ptr) => func.c_fn.set(ptr),
+        Err(msg) => panic!("jit error: {}",msg)
+    }
+}
+
+thread_local! {
+    pub static JIT_CONTEXT: RefCell<JIT> = Default::default();
+}
 
 pub struct JIT {
     module: JITModule,
@@ -37,17 +66,17 @@ impl Default for JIT {
 }
 
 impl JIT {
-    pub fn compile(&mut self, sig: &Signature, code: &FuncCode) -> Result<*const u8, String> {
-        let fn_id = self.module.declare_function("butt", Linkage::Export, &self.ctx.func.signature)
+    fn compile(&mut self, func: &Function) -> Result<*const u8, String> {
+        let sig = func.sig();
+        let ir = func.ir();
+        self.ctx.func.signature = lower_sig(sig);
+
+        let fn_id = self.module.declare_function("func", Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
         {
-            self.lower_sig(sig);
-
-            //let mut fn_builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx);
-
             let mut jit_func = JITFunc{
-                code,
+                input_fn: ir,
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx)
             };
 
@@ -70,19 +99,6 @@ impl JIT {
         
         Ok(code)
     }
-
-    fn lower_sig(&mut self, sig: &Signature) {
-
-        for ty in &sig.inputs {
-            if let Some(cty) = lower_type(*ty) {
-                self.ctx.func.signature.params.push(AbiParam::new(cty));
-            }
-        }
-
-        if let Some(cty) = lower_type(sig.output) {
-            self.ctx.func.signature.returns.push(AbiParam::new(cty));
-        }
-    }
 }
 
 fn lower_type(ty: Type) -> CType {
@@ -93,6 +109,26 @@ fn lower_type(ty: Type) -> CType {
         Type::Void => None,
         _ => panic!("unknown type")
     }
+}
+
+fn lower_sig(sig: &Signature) -> CSignature {
+
+    #[cfg(not(target_os = "windows"))]
+    let call_conv = CallConv::SystemV;
+
+    let mut result = CSignature::new(call_conv);
+
+    for ty in &sig.inputs {
+        if let Some(cty) = lower_type(*ty) {
+            result.params.push(AbiParam::new(cty));
+        }
+    }
+
+    if let Some(cty) = lower_type(sig.output) {
+        result.returns.push(AbiParam::new(cty));
+    }
+
+    result
 }
 
 #[derive(Debug,Copy,Clone)]
@@ -134,7 +170,7 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
 }
 
 struct JITFunc<'a> {
-    code: &'a FuncCode,
+    input_fn: &'a FuncIR,
     fn_builder: FunctionBuilder<'a>,
 }
 
@@ -142,8 +178,8 @@ impl<'a> JITFunc<'a> {
     pub fn compile(&mut self) {
         let entry_block = self.fn_builder.create_block();
 
-        for index in self.code.vars.iter() {
-            let ExprInfo{expr,ty,..} = &self.code.exprs[*index as usize];
+        for index in self.input_fn.vars.iter() {
+            let ExprInfo{expr,ty,..} = &self.input_fn.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
                 let cty = lower_type(*ty);
                 if let Some(cty) = lower_type(*ty) {
@@ -165,14 +201,18 @@ impl<'a> JITFunc<'a> {
             self.fn_builder.def_var(var, *val);
         }
         
-        let res = self.lower_expr(self.code.root_expr as u32);
-        self.fn_builder.ins().return_(&[res.unwrap()]);
+        let res = self.lower_expr(self.input_fn.root_expr as u32);
+        if let Some(res) = res {
+            self.fn_builder.ins().return_(&[res]);
+        } else {
+            self.fn_builder.ins().return_(&[]);
+        }
 
         self.fn_builder.finalize();
     }
 
     fn lower_expr(&mut self, expr_id: u32) -> CVal {
-        let ExprInfo{expr,ty,..} = &self.code.exprs[expr_id as usize];
+        let ExprInfo{expr,ty,..} = &self.input_fn.exprs[expr_id as usize];
         let cty = lower_type(*ty);
         match expr {
             /*Expr::DeclVar(n) => {
@@ -185,7 +225,7 @@ impl<'a> JITFunc<'a> {
                 Some(self.fn_builder.use_var(var))
             },
             Expr::CastPrimitive(arg) => {
-                let src_ty = self.code.exprs[*arg as usize].ty;
+                let src_ty = self.input_fn.exprs[*arg as usize].ty;
 
                 let arg = self.lower_expr(*arg).unwrap();
 
@@ -237,7 +277,7 @@ impl<'a> JITFunc<'a> {
                             self.fn_builder.ins().urem(lval,rval)
                         },
                     (_,LowBinOp::Gt) | (_,LowBinOp::Lt) => {
-                        let arg_ty = self.code.exprs[*lhs as usize].ty;
+                        let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
                             Type::Int(_) => {
                                 self.fn_builder.ins().icmp(op.int_cond_code(arg_ty.is_signed()), lval,rval)
@@ -352,6 +392,29 @@ impl<'a> JITFunc<'a> {
 
                 None
             },
+            Expr::CallBuiltin(bi,args) => {
+                let c_sig = lower_sig(&bi.signature());
+                let ret_count = c_sig.returns.len();
+                let sig_id = self.fn_builder.import_signature(c_sig);
+
+                let ptr = bi.fn_ptr();
+                let fn_val = self.fn_builder.ins().iconst(ptr_ty(), ptr as i64 );
+
+                let mut c_args = Vec::new();
+                for arg in args {
+                    if let Some(val) = self.lower_expr(*arg) {
+                        c_args.push(val);
+                    }
+                }
+
+                let _call_res = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
+
+                if ret_count > 0 {
+                    panic!("stop");
+                } else {
+                    None
+                }
+            },
             _ => panic!("todo lower expr {:?}",expr)
         }
     }
@@ -370,7 +433,7 @@ impl<'a> JITFunc<'a> {
 
     fn lower_assign(&mut self, dest_id: u32, src: CVal) -> CVal {
         if let Some(src) = src {
-            let ExprInfo{expr,ty,..} = &self.code.exprs[dest_id as usize];
+            let ExprInfo{expr,ty,..} = &self.input_fn.exprs[dest_id as usize];
             let cty = lower_type(*ty);
             match expr {
                 Expr::Var(var_id) => {

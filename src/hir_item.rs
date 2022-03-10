@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, cell::Cell};
 
 use std::cell::RefCell;
 use once_cell::unsync::OnceCell;
 
-use crate::{hir_expr::FuncCode, types::Signature};
+use crate::{hir_expr::FuncIR, types::Signature};
 
 #[derive(Debug,Clone,Copy)]
 pub enum Item{
     Fn(&'static Function),
+    Module(), // not implemented
     Local(u32)
 }
 
@@ -18,14 +19,21 @@ impl Item {
                 let name = ItemName::Value(syn_fn.sig.ident.to_string());
 
                 let func = Box::new(Function{
+                    c_fn: Cell::new(std::ptr::null()),
+
                     syn_fn,
                     parent_scope: scope,
                     sig: OnceCell::new(),
-                    code: OnceCell::new()
+                    ir: OnceCell::new()
                 });
                 let func = Box::leak(func);
 
                 let item = Item::Fn(func);
+                (name,item)
+            },
+            syn::Item::Mod(syn_mod) => {
+                let name = ItemName::Type(syn_mod.ident.to_string());
+                let item = Item::Module();
                 (name,item)
             },
             _ => panic!("todo handle item => {:?}",syn_item)
@@ -33,11 +41,14 @@ impl Item {
     }
 }
 
+#[repr(C)]
 pub struct Function{
+    pub c_fn: Cell<*const u8>,
+
     syn_fn: syn::ItemFn,
     parent_scope: &'static RefCell<Scope>,
     sig: OnceCell<Signature>, // todo once-cell?
-    code: OnceCell<FuncCode>  // todo once-cell?
+    ir: OnceCell<FuncIR>,  // todo once-cell?
 }
 
 impl std::fmt::Debug for Function {
@@ -57,11 +68,11 @@ impl Function {
         })
     }
 
-    pub fn code(&self) -> &FuncCode {
+    pub fn ir(&self) -> &FuncIR {
         let sig = self.sig();
 
-        self.code.get_or_init(|| {
-            FuncCode::from_syn(&self.syn_fn, sig, self.parent_scope)
+        self.ir.get_or_init(|| {
+            FuncIR::from_syn(&self.syn_fn, sig, self.parent_scope)
         })
     }
 }

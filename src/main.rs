@@ -1,21 +1,22 @@
 
-mod hir_items;
+mod hir_item;
 mod hir_expr;
 mod hir_check;
 mod types;
 mod jit;
+mod builtin;
 mod disassemble;
 
+use crate::{hir_item::{Scope, ItemName, Item}, jit::jit_compile};
 
-use std::time::Instant;
+use memoffset::offset_of;
 
-use crate::{hir_items::{Scope, ItemName, Item}};
-use jit::JIT;
-
-const VERBOSE: bool = false;
+const PTR_WIDTH: usize = 8;
+const VERBOSE: bool = true;
 
 fn main() {
-    let start = Instant::now();
+    check_abi();
+
     let file_string = std::fs::read_to_string("test/add.rs").expect("failed to read source file");
 
     let syn_tree: syn::File = syn::parse_str(&file_string).expect("failed to parse source code");
@@ -23,22 +24,19 @@ fn main() {
     let module = Scope::from_syn_file(syn_tree);
     let module = module.borrow();
 
-    if let Item::Fn(func) = module.get(&ItemName::Value("add".into())).unwrap() {
-        //let code = func.code();
-        //code.print();
-        let code = func.code();
+    let compiled_main = if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap() {
 
-        let mut jit: JIT = Default::default();
+        jit_compile(func);
 
-        let compiled_ptr = jit.compile(func.sig(),code).unwrap();
-        
-        println!("Build Time: {:?}",start.elapsed());
+        unsafe { std::mem::transmute::<_, fn() >(func.c_fn.get()) }
+    } else {
+        panic!("can't find main");
+    };
 
-        let compiled_fn = unsafe { std::mem::transmute::<_, fn(i32,i32)->i32 >(compiled_ptr) };
+    compiled_main();
+}
 
-        let start = Instant::now();
-        let res = compiled_fn(10000,100_000_000);
-        println!("Exec Time: {:?}",start.elapsed());
-        println!("Result: {}",res);
-    }
+fn check_abi() {
+    assert_eq!(std::mem::size_of::<usize>(),PTR_WIDTH);
+    assert_eq!(offset_of!(hir_item::Function, c_fn), 0);
 }

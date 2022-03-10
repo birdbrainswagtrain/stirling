@@ -1,7 +1,5 @@
 
-use crate::hir_items::{Scope, try_path_to_name};
-
-const PTR_WIDTH: usize = 8;
+use crate::hir_item::{Scope, try_path_to_name};
 
 
 pub struct TypeRegistry{}
@@ -13,6 +11,10 @@ pub struct Signature{
 }
 
 impl Signature{
+    pub fn new(inputs: Vec<Type>, output: Type) -> Self {
+        Self{inputs, output}
+    }
+
     pub fn from_syn(syn_sig: &syn::Signature, scope: &Scope) -> Signature {
         let mut inputs = Vec::new();
         for arg in &syn_sig.inputs {
@@ -24,7 +26,7 @@ impl Signature{
             };
         }
         let output = match &syn_sig.output {
-            syn::ReturnType::Default => panic!("default return type"),
+            syn::ReturnType::Default => Type::Void,
             syn::ReturnType::Type(_,syn_ty) => {
                 Type::from_syn(&syn_ty, scope)
             }
