@@ -8,7 +8,7 @@ use std::cell::RefCell;
 pub struct FuncCode{
     pub root_expr: usize,
     pub exprs: Vec<ExprInfo>,
-    pub vars: Vec<u32> // map into expr list
+    pub vars: Vec<u32>, // map into expr list
 }
 
 pub struct ExprInfo{

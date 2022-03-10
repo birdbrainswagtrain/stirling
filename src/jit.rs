@@ -5,6 +5,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Module, DataContext, Linkage};
 use syn::{BinOp, UnOp};
 
+use crate::disassemble::disassemble;
 use crate::{hir_expr::{FuncCode, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
 
 type CType = Option<cranelift::prelude::Type>;
@@ -36,7 +37,7 @@ impl Default for JIT {
 }
 
 impl JIT {
-    pub fn compile(&mut self, sig: &Signature, code: &FuncCode) -> Result<(*const u8,usize), String> {
+    pub fn compile(&mut self, sig: &Signature, code: &FuncCode) -> Result<*const u8, String> {
         let fn_id = self.module.declare_function("butt", Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
@@ -59,10 +60,15 @@ impl JIT {
         
         self.module.clear_context(&mut self.ctx);
         self.module.finalize_definitions();
-    
-        let code = self.module.get_finalized_function(fn_id);
         
-        Ok((code,size))
+        let code = self.module.get_finalized_function(fn_id);
+
+        if crate::VERBOSE {
+            let compiled_slice = unsafe { std::slice::from_raw_parts(code,size) };
+            disassemble(compiled_slice);
+        }
+        
+        Ok(code)
     }
 
     fn lower_sig(&mut self, sig: &Signature) {
