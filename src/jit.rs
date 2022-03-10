@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use cranelift::codegen::Context;
 use cranelift::frontend::{FunctionBuilderContext, FunctionBuilder};
-use cranelift::prelude::{MemFlags, TrapCode};
+use cranelift::prelude::MemFlags;
 use cranelift::prelude::{Value, Variable, AbiParam, types, IntCC, isa::CallConv, EntityRef, InstBuilder};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{Module, DataContext, Linkage, FuncId};

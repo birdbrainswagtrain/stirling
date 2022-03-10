@@ -7,6 +7,7 @@
 - blocks, can yield values
 - if-else, can yield values
 - while loops (no break or continue)
+- simple function calls (no method invocation or generics)
 
 ## Not Yet Implemented
 - i128 / u128 constants may not work.
