@@ -1,5 +1,7 @@
+use crate::builtin::BUILTINS;
 
-use crate::{hir_expr::{FuncIR, Expr}, types::{Type, TypeInt, Signature}, builtin::BUILTINS};
+use super::func::{FuncHIR, Expr};
+use super::types::{Type, TypeInt, Signature};
 
 #[derive(Clone,Copy)]
 struct CheckResult{
@@ -21,7 +23,7 @@ impl CheckResult {
     }
 }
 
-impl FuncIR {
+impl FuncHIR {
     pub fn check(&mut self) {
         
         let mut step = 0;

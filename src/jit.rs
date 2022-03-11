@@ -15,8 +15,9 @@ use syn::{BinOp, UnOp};
 use crate::PTR_WIDTH;
 use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
-use crate::hir_item::Function;
-use crate::{hir_expr::{FuncIR, Block, Expr, ExprInfo}, types::{Signature, Type, TypeInt}};
+use crate::hir::item::Function;
+use crate::hir::func::{FuncHIR,Expr,ExprInfo,Block};
+use crate::hir::types::{Type, TypeInt, Signature};
 
 type CSignature = cranelift::prelude::Signature;
 type CType = Option<cranelift::prelude::Type>;
@@ -46,10 +47,10 @@ pub fn jit_compile(func: &Function) -> *const u8 {
 }
 
 thread_local! {
-    pub static JIT_CONTEXT: RefCell<JIT> = Default::default();
+    static JIT_CONTEXT: RefCell<JIT> = Default::default();
 }
 
-pub struct JIT {
+struct JIT {
     module: JITModule,
     ctx: Context,
     builder_ctx: FunctionBuilderContext,
@@ -95,7 +96,7 @@ impl Default for JIT {
 impl JIT {
     fn compile(&mut self, func: &Function) -> Result<*const u8, String> {
         let sig = func.sig();
-        let ir = func.ir();
+        let ir = func.hir();
         self.ctx.func.signature = lower_sig(sig);
 
         let fn_name = format!("skitter_{}",func as *const Function as usize);
@@ -201,7 +202,7 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
 }
 
 struct JITFunc<'a> {
-    input_fn: &'a FuncIR,
+    input_fn: &'a FuncHIR,
     fn_builder: FunctionBuilder<'a>,
     module: &'a JITModule,
     builtins: &'a HashMap<String,FuncId>

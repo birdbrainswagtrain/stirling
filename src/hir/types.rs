@@ -1,6 +1,4 @@
-
-use crate::hir_item::{Scope, try_path_to_name};
-
+use super::item::{Scope, try_path_to_name};
 
 pub struct TypeRegistry{}
 

@@ -1,13 +1,11 @@
 
-mod hir_item;
-mod hir_expr;
-mod hir_check;
-mod types;
+mod hir;
 mod jit;
 mod builtin;
 mod disassemble;
 
-use crate::{hir_item::{Scope, ItemName, Item}, jit::jit_compile};
+use crate::jit::jit_compile;
+use crate::hir::item::{Item, ItemName, Function, Scope};
 
 use memoffset::offset_of;
 
@@ -38,5 +36,5 @@ fn main() {
 
 fn check_abi() {
     assert_eq!(std::mem::size_of::<usize>(),PTR_WIDTH);
-    assert_eq!(offset_of!(hir_item::Function, c_fn), 0);
+    assert_eq!(offset_of!(Function, c_fn), 0);
 }

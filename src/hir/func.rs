@@ -1,10 +1,9 @@
-
-use crate::hir_item::{Scope, Item, ItemName, Function};
-use crate::types::{Type, Signature};
+use super::types::{Type,Signature};
+use super::item::{Item, ItemName, Scope, Function};
 
 use std::cell::RefCell;
 
-pub struct FuncIR{
+pub struct FuncHIR {
     pub root_expr: usize,
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
@@ -22,9 +21,9 @@ impl ExprInfo{
     }
 }
 
-impl FuncIR {
+impl FuncHIR  {
     pub fn from_syn(syn_fn: &syn::ItemFn, ty_sig: &Signature, parent_scope: &'static RefCell<Scope>) -> Self {
-        let mut code = FuncIR{
+        let mut code = FuncHIR {
             root_expr: 0, // invalid, todo fill
             exprs: vec!(),
             vars: vec!()
@@ -99,7 +98,7 @@ impl Block {
         }
     }
 
-    pub fn add_args(&mut self, code: &mut FuncIR, syn_sig: &syn::Signature, sig: &Signature) {
+    pub fn add_args(&mut self, code: &mut FuncHIR , syn_sig: &syn::Signature, sig: &Signature) {
         for (i,(syn_arg,ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
 
             let var_id = code.push_expr(Expr::Var(i as u32), *ty );
@@ -115,7 +114,7 @@ impl Block {
         }
     }
 
-    pub fn add_from_syn(&mut self, code: &mut FuncIR, syn_block: &syn::Block) {
+    pub fn add_from_syn(&mut self, code: &mut FuncHIR , syn_block: &syn::Block) {
         let mut terminate = false;
         for stmt in &syn_block.stmts {
             if terminate {
@@ -150,7 +149,7 @@ impl Block {
         }
     }
 
-    fn add_expr(&mut self, code: &mut FuncIR, syn_expr: &syn::Expr) -> u32 {
+    fn add_expr(&mut self, code: &mut FuncHIR , syn_expr: &syn::Expr) -> u32 {
 
         match syn_expr {
             syn::Expr::Paren(syn::ExprParen{expr,..}) => self.add_expr(code, expr),
@@ -264,7 +263,7 @@ impl Block {
         }
     }
 
-    fn child_block_from_syn(&self, code: &mut FuncIR, syn_block: &syn::Block) -> Box<Block> {
+    fn child_block_from_syn(&self, code: &mut FuncHIR , syn_block: &syn::Block) -> Box<Block> {
         let mut block = Block::new(Some(self.scope));
         block.add_from_syn(code, &syn_block);
         Box::new(block)

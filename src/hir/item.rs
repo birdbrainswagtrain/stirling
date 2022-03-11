@@ -1,9 +1,10 @@
 use std::{collections::HashMap, cell::Cell};
 
 use std::cell::RefCell;
-use once_cell::unsync::OnceCell;
+use once_cell::sync::OnceCell;
 
-use crate::{hir_expr::FuncIR, types::Signature};
+use super::types::Signature;
+use super::func::FuncHIR;
 
 #[derive(Debug,Clone,Copy)]
 pub enum Item{
@@ -27,7 +28,7 @@ impl Item {
                     syn_fn,
                     parent_scope: scope,
                     sig: OnceCell::new(),
-                    ir: OnceCell::new()
+                    hir: OnceCell::new()
                 });
                 let func = Box::leak(func);
 
@@ -52,7 +53,7 @@ pub struct Function{
     syn_fn: syn::ItemFn,
     parent_scope: &'static RefCell<Scope>,
     sig: OnceCell<Signature>, // todo once-cell?
-    ir: OnceCell<FuncIR>,  // todo once-cell?
+    hir: OnceCell<FuncHIR>,  // todo once-cell?
 }
 
 impl std::fmt::Debug for Function {
@@ -63,8 +64,8 @@ impl std::fmt::Debug for Function {
 
 impl Function {
     // we need:
-    // - the type registry
-    // - the the scope chain
+    // - the type registry (global)
+    // - the the scope chain (we have it)
     pub fn sig(&self) -> &Signature {
         self.sig.get_or_init(|| {
             let scope = self.parent_scope.borrow();
@@ -72,11 +73,11 @@ impl Function {
         })
     }
 
-    pub fn ir(&self) -> &FuncIR {
+    pub fn hir(&self) -> &FuncHIR {
         let sig = self.sig();
 
-        self.ir.get_or_init(|| {
-            FuncIR::from_syn(&self.syn_fn, sig, self.parent_scope)
+        self.hir.get_or_init(|| {
+            FuncHIR::from_syn(&self.syn_fn, sig, self.parent_scope)
         })
     }
 }

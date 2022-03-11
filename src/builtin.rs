@@ -3,7 +3,8 @@ use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
-use crate::{types::{Signature, Type, TypeInt}, jit::jit_compile};
+use crate::jit::jit_compile;
+use crate::hir::types::{Type, Signature, TypeInt};
 
 pub static BUILTINS: Lazy<HashMap<&'static str,(usize,Signature)>> = Lazy::new(|| {
     let mut m = HashMap::new();

@@ -40,4 +40,5 @@ fn main() {
     _skitter_builtin::print_i32(123);
     call_tiny();
     _skitter_builtin::print_i32(789);
+    bad();
 }
