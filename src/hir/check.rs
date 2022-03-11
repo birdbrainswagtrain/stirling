@@ -323,10 +323,10 @@ enum OpClass {
     // apply to floats and ints
     // argument types and result type all match
     Ord,
-    // apply to floats and ints
+    // apply to floats and ints, do NOT apply to bools even though they are ord
     // argument types must match but result type must be bool
     Eq,
-    // apply to any primitives
+    // apply to all primitives
     // argument types must match but result type must be bool
     Bitwise,
     // apply to ints and bools

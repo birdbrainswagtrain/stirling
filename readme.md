@@ -6,7 +6,7 @@
 
 ### Types
 - Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts, equality
-- Bools: Literals, "bitwise", TODO ordinal, equality, logic
+- Bools: Literals, "bitwise", TODO: equality, logic, DO NOT IMPLEMENT ORDINAL COMPARISONS
 
 ### Control Flow
 - blocks, can yield values

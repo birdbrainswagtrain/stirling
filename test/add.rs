@@ -49,8 +49,8 @@ fn bad() {
 }
 
 fn main() {
-    let a: u32 = 20;
-    let b = 20;
+    let a = false;
+    let b = true;
     print_bool(a > b);
     print_bool(a < b);
     print_bool(a >= b);
