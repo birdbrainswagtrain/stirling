@@ -122,15 +122,18 @@ impl Block {
     }
 
     pub fn add_from_syn(&mut self, code: &mut FuncHIR, syn_block: &syn::Block) {
-        let mut terminate = false;
-        for stmt in &syn_block.stmts {
-            if terminate {
-                panic!("block should have terminated");
-            }
+        //let mut terminate = false;
+        let stmt_count = syn_block.stmts.len();
+        for (i,stmt) in syn_block.stmts.iter().enumerate() {
+            let is_final = i+1 == stmt_count;
             match stmt {
                 syn::Stmt::Expr(syn_expr) => {
-                    self.result = Some(self.add_expr(code, syn_expr));
-                    terminate = true;
+                    let expr_id = self.add_expr(code, syn_expr);
+                    if is_final {
+                        self.result = Some(expr_id);
+                    } else {
+                        self.stmts.push(expr_id);
+                    }
                 }
                 syn::Stmt::Semi(syn_expr, _) => {
                     let expr_id = self.add_expr(code, syn_expr);

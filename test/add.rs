@@ -24,12 +24,12 @@ fn call_tiny() {
             sum /= 2;
         } else {
             sum += 100;
-        };
+        }
         sum += tiny(100,i);
         i += 1;
-    };
+    }
     _skitter_builtin::print_i32(i);
-    _skitter_builtin::print_i32(sum);
+    _skitter_builtin::print_i32(sum)
 }
 
 fn bad() {
