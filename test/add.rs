@@ -1,14 +1,26 @@
 mod _skitter_builtin;
 
-fn add(x: i32, y: i32) -> i32 {
-    let mut i = 0;
-    let mut sum = 0;
-    while i < y {
-        i += 1;
-        sum += x;
-        sum /= 2;
-    };
-    sum
+fn print_bool(a: bool) {
+    if a {
+        _skitter_builtin::print_i32(1);
+    } else {
+        _skitter_builtin::print_i32(0);
+    }
+}
+
+fn bit_test(a: bool, b: bool) {
+    let res = a ^ b;
+    if res {
+        _skitter_builtin::print_i32(1);
+    } else {
+        _skitter_builtin::print_i32(0);
+    }
+}
+
+fn int_test(a: u32, b: u32) {
+    _skitter_builtin::print_i32((a & b) as i32);
+    _skitter_builtin::print_i32((a | b) as i32);
+    _skitter_builtin::print_i32((a ^ b) as i32);
 }
 
 fn tiny(x: i32, y: i32) -> i32 {
@@ -37,8 +49,10 @@ fn bad() {
 }
 
 fn main() {
-    _skitter_builtin::print_i32(123);
-    call_tiny();
-    _skitter_builtin::print_i32(789);
-    bad();
+    let a = 10;
+    let b = 20;
+    print_bool(a > b);
+    print_bool(a < b);
+    print_bool(a >= b);
+    print_bool(a <= b);
 }

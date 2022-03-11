@@ -176,9 +176,13 @@ enum LowBinOp {
     Mul,
     Div,
     Rem,
-    //BitAnd, BitOr, BitXor
+
     Gt,
     Lt,
+
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 impl LowBinOp {
@@ -191,6 +195,7 @@ impl LowBinOp {
     }
 }
 
+// Second parameter indicates whether the op is an assignment
 fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
     match op {
         BinOp::Add(_) => (LowBinOp::Add, false),
@@ -207,6 +212,14 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
 
         BinOp::Gt(_) => (LowBinOp::Gt, false),
         BinOp::Lt(_) => (LowBinOp::Lt, false),
+
+        BinOp::BitAnd(_) => (LowBinOp::BitAnd, false),
+        BinOp::BitOr(_) => (LowBinOp::BitOr, false),
+        BinOp::BitXor(_) => (LowBinOp::BitXor, false),
+
+        BinOp::BitAndEq(_) => (LowBinOp::BitAnd, true),
+        BinOp::BitOrEq(_) => (LowBinOp::BitOr, true),
+        BinOp::BitXorEq(_) => (LowBinOp::BitXor, true),
 
         _ => panic!("can't lower op {:?}", op),
     }
@@ -323,6 +336,10 @@ impl<'a> JITFunc<'a> {
                             self.fn_builder.ins().urem(lval, rval)
                         }
                     }
+                    (_, LowBinOp::BitAnd) => self.fn_builder.ins().band(lval, rval),
+                    (_, LowBinOp::BitOr) => self.fn_builder.ins().bor(lval, rval),
+                    (_, LowBinOp::BitXor) => self.fn_builder.ins().bxor(lval, rval),
+
                     (_, LowBinOp::Gt) | (_, LowBinOp::Lt) => {
                         let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
@@ -335,7 +352,7 @@ impl<'a> JITFunc<'a> {
                         }
                     }
 
-                    _ => panic!("can't lower primitive op {:?} {:?}", op, ty),
+                    _ => panic!("can't lower primitive op {:?} {:?}", ty, op),
                 });
 
                 if is_assign {
@@ -363,7 +380,29 @@ impl<'a> JITFunc<'a> {
             }
             Expr::LitBool(x) => Some(self.fn_builder.ins().bconst(cty.unwrap(), *x)),
             Expr::Block(block) => self.lower_block(block),
-            Expr::IfElse(cond, then_block, else_expr) => {
+            // if-then's without an else
+            Expr::If(cond, then_block, None) => {
+                let then_cb = self.fn_builder.create_block();
+                let final_cb = self.fn_builder.create_block();
+
+                let cond = self.lower_expr(*cond).unwrap();
+
+                self.fn_builder.ins().brnz(cond, then_cb, &[]);
+                self.fn_builder.ins().jump(final_cb, &[]);
+
+                self.fn_builder.seal_block(then_cb);
+                self.fn_builder.switch_to_block(then_cb);
+
+                self.lower_block(then_block);
+                self.fn_builder.ins().jump(final_cb, &[]);
+
+                self.fn_builder.seal_block(final_cb);
+                self.fn_builder.switch_to_block(final_cb);
+
+                None
+            }
+            // if-then-else which can yield values
+            Expr::If(cond, then_block, Some(else_expr)) => {
                 let then_cb = self.fn_builder.create_block();
                 let else_cb = self.fn_builder.create_block();
                 let final_cb = self.fn_builder.create_block();

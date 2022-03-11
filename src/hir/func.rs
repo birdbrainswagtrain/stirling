@@ -124,8 +124,8 @@ impl Block {
     pub fn add_from_syn(&mut self, code: &mut FuncHIR, syn_block: &syn::Block) {
         //let mut terminate = false;
         let stmt_count = syn_block.stmts.len();
-        for (i,stmt) in syn_block.stmts.iter().enumerate() {
-            let is_final = i+1 == stmt_count;
+        for (i, stmt) in syn_block.stmts.iter().enumerate() {
+            let is_final = i + 1 == stmt_count;
             match stmt {
                 syn::Stmt::Expr(syn_expr) => {
                     let expr_id = self.add_expr(code, syn_expr);
@@ -235,13 +235,10 @@ impl Block {
             }) => {
                 let id_cond = self.add_expr(code, cond);
                 let then_block = self.child_block_from_syn(code, then_branch);
-                if let Some((_, else_branch)) = else_branch {
-                    let id_else = self.add_expr(code, else_branch);
-                    code.push_expr(Expr::IfElse(id_cond, then_block, id_else), Type::Unknown)
-                } else {
-                    // TODO use type unknown so the expr is properly checked
-                    panic!("single-side if");
-                }
+                let id_else = else_branch
+                    .as_ref()
+                    .map(|(_, else_branch)| self.add_expr(code, else_branch));
+                code.push_expr(Expr::If(id_cond, then_block, id_else), Type::Unknown)
             }
             syn::Expr::While(syn::ExprWhile { cond, body, .. }) => {
                 let id_cond = self.add_expr(code, cond);
@@ -297,8 +294,7 @@ pub enum Expr {
     LitBool(bool),
     Assign(u32, u32),
     CastPrimitive(u32),
-    If(u32, Box<Block>),
-    IfElse(u32, Box<Block>, u32),
+    If(u32, Box<Block>, Option<u32>),
     While(u32, Box<Block>),
     Call(&'static Function, Vec<u32>),
     CallBuiltin(String, Vec<u32>),

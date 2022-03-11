@@ -63,13 +63,14 @@ impl Type {
         match syn_ty {
             syn::Type::Path(path) => {
                 if let Some(name) = try_path_to_name(&path.path) {
-                    Self::from_str(&name).expect("failed to parse type")
-                } else {
-                    panic!("complex path to type")
+                    if let Some(ty) = Self::from_str(&name) {
+                        return ty;
+                    }
                 }
             }
-            _ => panic!("todo convert type! {:?}", syn_ty),
+            _ => (),
         }
+        panic!("failed to convert type {:?}", syn_ty)
     }
 
     pub fn from_str(name: &str) -> Option<Type> {
@@ -87,6 +88,8 @@ impl Type {
             "u32" => Some(Type::Int(TypeInt::U32)),
             "u16" => Some(Type::Int(TypeInt::U16)),
             "u8" => Some(Type::Int(TypeInt::U8)),
+
+            "bool" => Some(Type::Bool),
 
             _ => None,
         }

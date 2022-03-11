@@ -87,7 +87,7 @@ impl FuncHIR {
         let info = &self.exprs[index as usize];
 
         match info.expr {
-            Expr::LitInt(_) | Expr::Var(_) | Expr::LitBool(_) => {
+            Expr::LitInt(_) | Expr::Var(_) | Expr::LitBool(_) | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {
                     mutated: false,
@@ -100,9 +100,13 @@ impl FuncHIR {
                 let lty = self.exprs[lhs as usize].ty;
                 let rty = self.exprs[rhs as usize].ty;
 
-                let is_primitive = match op_kind(&op) {
-                    OpKind::Arithmetic | OpKind::Ord => lty.is_number() && rty.is_number(),
-                    OpKind::Eq => panic!("eq"),
+                let is_primitive = match op_class(&op) {
+                    OpClass::Arithmetic | OpClass::Ord => lty.is_number() && rty.is_number(),
+                    OpClass::Bitwise => {
+                        (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
+                    }
+                    OpClass::BitShift => panic!("shift"),
+                    OpClass::Eq => panic!("eq"),
                 };
 
                 if is_primitive {
@@ -145,17 +149,35 @@ impl FuncHIR {
                     }
                 }
             }
-            Expr::IfElse(cond, ref then_block, else_expr) => {
+            Expr::If(cond, ref then_block, else_expr) => {
                 let then_expr = then_block.result;
 
                 let mutated = self.update_expr_type(cond, Type::Bool);
 
-                let mut res = if let Some(then_expr) = then_expr {
-                    self.check_match_3(index, then_expr, else_expr)
+                let mut res = if let Some(else_expr) = else_expr {
+                    // if-then-else
+                    if let Some(then_expr) = then_expr {
+                        self.check_match_3(index, then_expr, else_expr)
+                    } else {
+                        // else side must be void
+                        let m1 = self.update_expr_type(else_expr, Type::Void);
+                        let m2 = self.update_expr_type(index, Type::Void);
+                        CheckResult {
+                            mutated: m1 || m2,
+                            resolved: true,
+                        }
+                    }
                 } else {
-                    // else side must be void
-                    let m1 = self.update_expr_type(else_expr, Type::Void);
+                    // if-then
+                    println!("YO");
+                    let m1 = if let Some(then_expr) = then_expr {
+                        self.update_expr_type(then_expr, Type::Void)
+                    } else {
+                        false
+                    };
+
                     let m2 = self.update_expr_type(index, Type::Void);
+
                     CheckResult {
                         mutated: m1 || m2,
                         resolved: true,
@@ -221,11 +243,11 @@ impl FuncHIR {
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
-        let op_kind = op_kind(&op);
+        let op_kind = op_class(&op);
 
         match op_kind {
-            OpKind::Arithmetic => self.check_match_3(index, lhs, rhs),
-            OpKind::Ord | OpKind::Eq => {
+            OpClass::Arithmetic | OpClass::Bitwise => self.check_match_3(index, lhs, rhs),
+            OpClass::Ord | OpClass::Eq => {
                 let mutated = self.update_expr_type(index, Type::Bool);
                 let mut res = self.check_match_2(lhs, rhs);
                 if mutated {
@@ -233,6 +255,7 @@ impl FuncHIR {
                 }
                 res
             }
+            OpClass::BitShift => panic!("shift"),
         }
     }
 
@@ -295,7 +318,7 @@ impl FuncHIR {
 }
 
 #[derive(Debug)]
-enum OpKind {
+enum OpClass {
     Arithmetic,
     // apply to floats and ints
     // argument types and result type all match
@@ -305,9 +328,14 @@ enum OpKind {
     Eq,
     // apply to any primitives
     // argument types must match but result type must be bool
+    Bitwise,
+    // apply to ints and bools
+    // argument types and result type all match
+    BitShift,
+    // TODO
 }
 
-fn op_kind(op: &syn::BinOp) -> OpKind {
+fn op_class(op: &syn::BinOp) -> OpClass {
     use syn::BinOp;
     match op {
         BinOp::Add(_)
@@ -319,9 +347,16 @@ fn op_kind(op: &syn::BinOp) -> OpKind {
         | BinOp::Div(_)
         | BinOp::DivEq(_)
         | BinOp::Rem(_)
-        | BinOp::RemEq(_) => OpKind::Arithmetic,
+        | BinOp::RemEq(_) => OpClass::Arithmetic,
 
-        BinOp::Lt(_) | BinOp::Gt(_) | BinOp::Le(_) | BinOp::Ge(_) => OpKind::Ord,
+        BinOp::Lt(_) | BinOp::Gt(_) | BinOp::Le(_) | BinOp::Ge(_) => OpClass::Ord,
+
+        BinOp::BitAnd(_)
+        | BinOp::BitAndEq(_)
+        | BinOp::BitOr(_)
+        | BinOp::BitOrEq(_)
+        | BinOp::BitXor(_)
+        | BinOp::BitXorEq(_) => OpClass::Bitwise,
 
         _ => panic!("todo op kind {:?}", op),
     }

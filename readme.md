@@ -5,12 +5,12 @@
 ## Features
 
 ### Types
-- Integers: Literals, arithmetic, comparisons, `as` casts between various widths.
-- Bools: Literals
+- Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts
+- Bools: Literals, "bitwise", TODO ordinal, TODO logic
 
 ### Control Flow
 - blocks, can yield values
-- if-else, can yield values
+- if-then and if-else, can yield values
 - while loops (no break or continue)
 - simple function calls (no method invocation or generics)
 
