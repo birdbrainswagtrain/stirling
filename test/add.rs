@@ -49,7 +49,7 @@ fn bad() {
 }
 
 fn main() {
-    let a = 10;
+    let a: u32 = 20;
     let b = 20;
     print_bool(a > b);
     print_bool(a < b);

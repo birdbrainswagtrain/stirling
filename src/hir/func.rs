@@ -73,8 +73,20 @@ pub struct Block {
 fn pat_to_name(pat: &syn::Pat) -> String {
     if let syn::Pat::Ident(pat_ident) = pat {
         pat_ident.ident.to_string()
+    } else if let syn::Pat::Type(pat_ty) = pat {
+        pat_to_name(&pat_ty.pat)
     } else {
-        panic!("pattern: {:?}", pat);
+        panic!("pattern to name {:?}",pat)
+    }
+}
+
+fn pat_to_name_and_ty(pat: &syn::Pat, scope: &Scope) -> (String,Type) {
+    if let syn::Pat::Type(pat_ty) = pat {
+        let ty = Type::from_syn(&pat_ty.ty, scope);
+        let name = pat_to_name(&pat_ty.pat);
+        (name,ty)
+    } else {
+        (pat_to_name(pat),Type::Unknown)
     }
 }
 
@@ -140,12 +152,12 @@ impl Block {
                     self.stmts.push(expr_id);
                 }
                 syn::Stmt::Local(syn_local) => {
-                    let ty = Type::Unknown;
+
+                    let (name,ty) = pat_to_name_and_ty(&syn_local.pat, &self.scope.borrow());
 
                     let var_id = code.push_expr(Expr::Var(code.vars.len() as u32), ty);
                     code.vars.push(var_id);
 
-                    let name = pat_to_name(&syn_local.pat);
                     self.scope
                         .borrow_mut()
                         .declare(ItemName::Value(name), Item::Local(var_id));

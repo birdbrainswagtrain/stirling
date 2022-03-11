@@ -179,6 +179,10 @@ enum LowBinOp {
 
     Gt,
     Lt,
+    Ge,
+    Le,
+    Eq,
+    Ne,
 
     BitAnd,
     BitOr,
@@ -186,10 +190,30 @@ enum LowBinOp {
 }
 
 impl LowBinOp {
+    fn is_compare(&self) -> bool {
+        match self {
+            LowBinOp::Gt |
+            LowBinOp::Lt |
+            LowBinOp::Ge |
+            LowBinOp::Le |
+            LowBinOp::Eq |
+            LowBinOp::Ne => true,
+            _ => false
+        }
+    }
+
     fn int_cond_code(&self, sign: bool) -> IntCC {
         match (self, sign) {
             (LowBinOp::Gt, true) => IntCC::SignedGreaterThan,
             (LowBinOp::Lt, true) => IntCC::SignedLessThan,
+            (LowBinOp::Ge, true) => IntCC::SignedGreaterThanOrEqual,
+            (LowBinOp::Le, true) => IntCC::SignedLessThanOrEqual,
+
+            (LowBinOp::Gt, false) => IntCC::UnsignedGreaterThan,
+            (LowBinOp::Lt, false) => IntCC::UnsignedLessThan,
+            (LowBinOp::Ge, false) => IntCC::UnsignedGreaterThanOrEqual,
+            (LowBinOp::Le, false) => IntCC::UnsignedLessThanOrEqual,
+
             _ => panic!("cond code for {:?} {}", self, sign),
         }
     }
@@ -212,6 +236,10 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
 
         BinOp::Gt(_) => (LowBinOp::Gt, false),
         BinOp::Lt(_) => (LowBinOp::Lt, false),
+        BinOp::Ge(_) => (LowBinOp::Ge, false),
+        BinOp::Le(_) => (LowBinOp::Le, false),
+        BinOp::Eq(_) => (LowBinOp::Eq, false),
+        BinOp::Ne(_) => (LowBinOp::Ne, false),
 
         BinOp::BitAnd(_) => (LowBinOp::BitAnd, false),
         BinOp::BitOr(_) => (LowBinOp::BitOr, false),
@@ -340,7 +368,7 @@ impl<'a> JITFunc<'a> {
                     (_, LowBinOp::BitOr) => self.fn_builder.ins().bor(lval, rval),
                     (_, LowBinOp::BitXor) => self.fn_builder.ins().bxor(lval, rval),
 
-                    (_, LowBinOp::Gt) | (_, LowBinOp::Lt) => {
+                    _ if op.is_compare() => {
                         let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
                             Type::Int(_) => self.fn_builder.ins().icmp(
