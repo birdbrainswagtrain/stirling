@@ -1,59 +1,59 @@
-use std::{collections::HashMap, cell::Cell};
+use std::{cell::Cell, collections::HashMap};
 
-use std::cell::RefCell;
 use once_cell::sync::OnceCell;
+use std::cell::RefCell;
 
-use super::types::Signature;
 use super::func::FuncHIR;
+use super::types::Signature;
 
-#[derive(Debug,Clone,Copy)]
-pub enum Item{
+#[derive(Debug, Clone, Copy)]
+pub enum Item {
     Fn(&'static Function),
     Module(), // not implemented
-    Local(u32)
+    Local(u32),
 }
 
 impl Item {
-    fn from_syn(syn_item: syn::Item, scope: &'static RefCell<Scope>) -> (ItemName,Item) {
+    fn from_syn(syn_item: syn::Item, scope: &'static RefCell<Scope>) -> (ItemName, Item) {
         match syn_item {
             syn::Item::Fn(syn_fn) => {
                 let base_name = syn_fn.sig.ident.to_string();
                 let debug_name = base_name.clone();
                 let name = ItemName::Value(base_name);
 
-                let func = Box::new(Function{
+                let func = Box::new(Function {
                     debug_name,
                     c_fn: Cell::new(std::ptr::null()),
 
                     syn_fn,
                     parent_scope: scope,
                     sig: OnceCell::new(),
-                    hir: OnceCell::new()
+                    hir: OnceCell::new(),
                 });
                 let func = Box::leak(func);
 
                 let item = Item::Fn(func);
-                (name,item)
-            },
+                (name, item)
+            }
             syn::Item::Mod(syn_mod) => {
                 let name = ItemName::Type(syn_mod.ident.to_string());
                 let item = Item::Module();
-                (name,item)
-            },
-            _ => panic!("todo handle item => {:?}",syn_item)
+                (name, item)
+            }
+            _ => panic!("todo handle item => {:?}", syn_item),
         }
     }
 }
 
 #[repr(C)]
-pub struct Function{
+pub struct Function {
     pub c_fn: Cell<*const u8>,
     pub debug_name: String,
-    
+
     syn_fn: syn::ItemFn,
     parent_scope: &'static RefCell<Scope>,
     sig: OnceCell<Signature>, // todo once-cell?
-    hir: OnceCell<FuncHIR>,  // todo once-cell?
+    hir: OnceCell<FuncHIR>,   // todo once-cell?
 }
 
 impl std::fmt::Debug for Function {
@@ -76,17 +76,16 @@ impl Function {
     pub fn hir(&self) -> &FuncHIR {
         let sig = self.sig();
 
-        self.hir.get_or_init(|| {
-            FuncHIR::from_syn(&self.syn_fn, sig, self.parent_scope)
-        })
+        self.hir
+            .get_or_init(|| FuncHIR::from_syn(&self.syn_fn, sig, self.parent_scope))
     }
 }
 
-#[derive(Eq,PartialEq,Hash,Debug)]
+#[derive(Eq, PartialEq, Hash, Debug)]
 pub enum ItemName {
     Type(String),
     Value(String),
-    Macro(String) // contains two sub-namespaces for bang-style macros and attributes
+    Macro(String), // contains two sub-namespaces for bang-style macros and attributes
 }
 
 pub fn try_path_to_name(path: &syn::Path) -> Option<String> {
@@ -99,15 +98,15 @@ pub fn try_path_to_name(path: &syn::Path) -> Option<String> {
 
 #[derive(Debug)]
 pub struct Scope {
-    map: HashMap<ItemName,Item>,
-    parent: Option<&'static RefCell<Scope>>
+    map: HashMap<ItemName, Item>,
+    parent: Option<&'static RefCell<Scope>>,
 }
 
-impl Scope{
+impl Scope {
     pub fn new(parent: Option<&'static RefCell<Scope>>) -> &'static RefCell<Scope> {
-        let scope = Box::new(RefCell::new(Scope{
+        let scope = Box::new(RefCell::new(Scope {
             map: HashMap::new(),
-            parent
+            parent,
         }));
         let scope: &'static _ = Box::leak(scope);
         scope
@@ -133,7 +132,7 @@ impl Scope{
         let scope = Self::new(None);
 
         for syn_item in syn_file.items {
-            let (k,v) = Item::from_syn(syn_item,&scope);
+            let (k, v) = Item::from_syn(syn_item, &scope);
             scope.borrow_mut().declare(k, v);
         }
         scope

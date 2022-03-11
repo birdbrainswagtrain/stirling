@@ -1,7 +1,6 @@
-use iced_x86::{Decoder,DecoderOptions,IntelFormatter,Formatter,Instruction};
+use iced_x86::{Decoder, DecoderOptions, Formatter, Instruction, IntelFormatter};
 
 pub fn disassemble(code: &[u8]) {
-    
     let mut decoder = Decoder::new(64, code, DecoderOptions::NONE);
     decoder.set_ip(0x1000);
 
@@ -13,6 +12,6 @@ pub fn disassemble(code: &[u8]) {
         output.clear();
         decoder.decode_out(&mut instruction);
         formatter.format(&instruction, &mut output);
-        println!("  {:02x}  {}",instruction.ip(),output);
+        println!("  {:02x}  {}", instruction.ip(), output);
     }
 }

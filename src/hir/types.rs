@@ -1,16 +1,16 @@
-use super::item::{Scope, try_path_to_name};
+use super::item::{try_path_to_name, Scope};
 
-pub struct TypeRegistry{}
+pub struct TypeRegistry {}
 
 #[derive(Debug)]
-pub struct Signature{
+pub struct Signature {
     pub inputs: Vec<Type>,
-    pub output: Type
+    pub output: Type,
 }
 
-impl Signature{
+impl Signature {
     pub fn new(inputs: Vec<Type>, output: Type) -> Self {
-        Self{inputs, output}
+        Self { inputs, output }
     }
 
     pub fn from_syn(syn_sig: &syn::Signature, scope: &Scope) -> Signature {
@@ -25,26 +25,24 @@ impl Signature{
         }
         let output = match &syn_sig.output {
             syn::ReturnType::Default => Type::Void,
-            syn::ReturnType::Type(_,syn_ty) => {
-                Type::from_syn(&syn_ty, scope)
-            }
+            syn::ReturnType::Type(_, syn_ty) => Type::from_syn(&syn_ty, scope),
         };
-        Signature{inputs, output}
+        Signature { inputs, output }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Type{
+pub enum Type {
     Unknown,
     IntUnknown,
     Int(TypeInt),
     Bool,
     Void,
-    Never
+    Never,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum TypeInt{
+pub enum TypeInt {
     ISize,
     I128,
     I64,
@@ -57,7 +55,7 @@ pub enum TypeInt{
     U64,
     U32,
     U16,
-    U8
+    U8,
 }
 
 impl Type {
@@ -70,60 +68,69 @@ impl Type {
                     panic!("complex path to type")
                 }
             }
-            _ => panic!("todo convert type! {:?}",syn_ty)
+            _ => panic!("todo convert type! {:?}", syn_ty),
         }
     }
 
     pub fn from_str(name: &str) -> Option<Type> {
         match name {
+            "isize" => Some(Type::Int(TypeInt::ISize)),
+            "i128" => Some(Type::Int(TypeInt::I128)),
+            "i64" => Some(Type::Int(TypeInt::I64)),
+            "i32" => Some(Type::Int(TypeInt::I32)),
+            "i16" => Some(Type::Int(TypeInt::I16)),
+            "i8" => Some(Type::Int(TypeInt::I8)),
 
-            "isize" => Some( Type::Int(TypeInt::ISize) ),
-            "i128" => Some( Type::Int(TypeInt::I128) ),
-            "i64" => Some( Type::Int(TypeInt::I64) ),
-            "i32" => Some( Type::Int(TypeInt::I32) ),
-            "i16" => Some( Type::Int(TypeInt::I16) ),
-            "i8" => Some( Type::Int(TypeInt::I8) ),
+            "usize" => Some(Type::Int(TypeInt::USize)),
+            "u128" => Some(Type::Int(TypeInt::U128)),
+            "u64" => Some(Type::Int(TypeInt::U64)),
+            "u32" => Some(Type::Int(TypeInt::U32)),
+            "u16" => Some(Type::Int(TypeInt::U16)),
+            "u8" => Some(Type::Int(TypeInt::U8)),
 
-            "usize" => Some( Type::Int(TypeInt::USize) ),
-            "u128" => Some( Type::Int(TypeInt::U128) ),
-            "u64" => Some( Type::Int(TypeInt::U64) ),
-            "u32" => Some( Type::Int(TypeInt::U32) ),
-            "u16" => Some( Type::Int(TypeInt::U16) ),
-            "u8" => Some( Type::Int(TypeInt::U8) ),
-
-            _ => None
+            _ => None,
         }
     }
 
     pub fn is_unknown(&self) -> bool {
         match self {
             Type::Unknown | Type::IntUnknown => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_number(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_int(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     pub fn is_signed(&self) -> bool {
         if let Type::Int(ti) = self {
             match ti {
-                TypeInt::ISize | TypeInt::I128 | TypeInt::I64 | TypeInt::I32 | TypeInt::I16 | TypeInt::I8 => true,
-                TypeInt::USize | TypeInt::U128 | TypeInt::U64 | TypeInt::U32 | TypeInt::U16 | TypeInt::U8 => false
+                TypeInt::ISize
+                | TypeInt::I128
+                | TypeInt::I64
+                | TypeInt::I32
+                | TypeInt::I16
+                | TypeInt::I8 => true,
+                TypeInt::USize
+                | TypeInt::U128
+                | TypeInt::U64
+                | TypeInt::U32
+                | TypeInt::U16
+                | TypeInt::U8 => false,
             }
         } else {
-            panic!("can't check signed-ness of {:?}",self)
+            panic!("can't check signed-ness of {:?}", self)
         }
     }
 
@@ -132,8 +139,8 @@ impl Type {
             Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => 8,
             Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => 4,
             Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => 2,
-            Type::Int(TypeInt::I8)  | Type::Int(TypeInt::U8)  => 1,
-            _ => panic!("cannot size {:?}",self)
+            Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => 1,
+            _ => panic!("cannot size {:?}", self),
         }
     }
 
@@ -141,13 +148,13 @@ impl Type {
         if self == other {
             panic!("type equivilance should be checked before calling this");
         } else {
-            match (self,other) {
-                (Type::Unknown,_) => true,
-                (Type::IntUnknown,Type::Int(_)) => true,
+            match (self, other) {
+                (Type::Unknown, _) => true,
+                (Type::IntUnknown, Type::Int(_)) => true,
 
-                (_,Type::Unknown) => false,
-                (Type::Int(_),Type::IntUnknown) => false,
-                _ => panic!("type error, can not unify types {:?} and {:?}",self,other)
+                (_, Type::Unknown) => false,
+                (Type::Int(_), Type::IntUnknown) => false,
+                _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
         }
     }

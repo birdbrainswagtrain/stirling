@@ -1,4 +1,4 @@
-pub mod func;
 pub mod check;
-pub mod types;
+pub mod func;
 pub mod item;
+pub mod types;

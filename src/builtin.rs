@@ -1,15 +1,26 @@
-
 use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
+use crate::hir::types::{Signature, Type, TypeInt};
 use crate::jit::jit_compile;
-use crate::hir::types::{Type, Signature, TypeInt};
 
-pub static BUILTINS: Lazy<HashMap<&'static str,(usize,Signature)>> = Lazy::new(|| {
+pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new(|| {
     let mut m = HashMap::new();
-    m.insert("jit_compile",(jit_compile as _, Signature::new(vec!(Type::Int(TypeInt::USize)), Type::Int(TypeInt::USize))));
-    m.insert("print_i32",(_builtin::print_i32 as _, Signature::new(vec!(Type::Int(TypeInt::I32)), Type::Void)));
+    m.insert(
+        "jit_compile",
+        (
+            jit_compile as _,
+            Signature::new(vec![Type::Int(TypeInt::USize)], Type::Int(TypeInt::USize)),
+        ),
+    );
+    m.insert(
+        "print_i32",
+        (
+            _builtin::print_i32 as _,
+            Signature::new(vec![Type::Int(TypeInt::I32)], Type::Void),
+        ),
+    );
     m
 });
 

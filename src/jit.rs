@@ -5,19 +5,21 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use cranelift::codegen::Context;
-use cranelift::frontend::{FunctionBuilderContext, FunctionBuilder};
+use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift::prelude::MemFlags;
-use cranelift::prelude::{Value, Variable, AbiParam, types, IntCC, isa::CallConv, EntityRef, InstBuilder};
+use cranelift::prelude::{
+    isa::CallConv, types, AbiParam, EntityRef, InstBuilder, IntCC, Value, Variable,
+};
 use cranelift_jit::{JITBuilder, JITModule};
-use cranelift_module::{Module, DataContext, Linkage, FuncId};
+use cranelift_module::{DataContext, FuncId, Linkage, Module};
 use syn::{BinOp, UnOp};
 
-use crate::PTR_WIDTH;
 use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
+use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
-use crate::hir::func::{FuncHIR,Expr,ExprInfo,Block};
-use crate::hir::types::{Type, TypeInt, Signature};
+use crate::hir::types::{Signature, Type, TypeInt};
+use crate::PTR_WIDTH;
 
 type CSignature = cranelift::prelude::Signature;
 type CType = Option<cranelift::prelude::Type>;
@@ -34,15 +36,15 @@ pub fn jit_compile(func: &Function) -> *const u8 {
         let mut jit = rc.borrow_mut();
         jit.compile(func)
     });
-    println!("JIT: {} {:?}",func.debug_name,start.elapsed());
-    
+    println!("JIT: {} {:?}", func.debug_name, start.elapsed());
+
     match result {
         Ok(ptr) => {
             func.c_fn.set(ptr);
 
             ptr
-        },
-        Err(msg) => panic!("jit error: {}",msg)
+        }
+        Err(msg) => panic!("jit error: {}", msg),
     }
 }
 
@@ -55,24 +57,26 @@ struct JIT {
     ctx: Context,
     builder_ctx: FunctionBuilderContext,
     data_ctx: DataContext,
-    builtins: HashMap<String,FuncId>
+    builtins: HashMap<String, FuncId>,
 }
 
 impl Default for JIT {
     fn default() -> Self {
         let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names());
 
-        for (key,(ptr,_)) in BUILTINS.iter() {
-            let name = format!("builtin_{}",key);
+        for (key, (ptr, _)) in BUILTINS.iter() {
+            let name = format!("builtin_{}", key);
             jit_builder.symbol(name, *ptr as *const u8);
         }
 
         let mut builtins = HashMap::new();
         let mut module = JITModule::new(jit_builder);
-        for (key,(_,sig)) in BUILTINS.iter() {
-            let name = format!("builtin_{}",key);
+        for (key, (_, sig)) in BUILTINS.iter() {
+            let name = format!("builtin_{}", key);
             let csig = lower_sig(sig);
-            let fn_id = module.declare_function(&name, Linkage::Import, &csig).expect("failed to declare builtin");
+            let fn_id = module
+                .declare_function(&name, Linkage::Import, &csig)
+                .expect("failed to declare builtin");
             builtins.insert(String::from(*key), fn_id);
         }
 
@@ -80,15 +84,14 @@ impl Default for JIT {
         let builder_ctx = FunctionBuilderContext::new();
         let data_ctx = DataContext::new();
 
-
         //let fn_id = self.module.declare_function("func", Linkage::Export, &self.ctx.func.signature)
 
-        Self{
+        Self {
             module,
             ctx,
             builder_ctx,
             data_ctx,
-            builtins
+            builtins,
         }
     }
 }
@@ -99,35 +102,39 @@ impl JIT {
         let ir = func.hir();
         self.ctx.func.signature = lower_sig(sig);
 
-        let fn_name = format!("skitter_{}",func as *const Function as usize);
-        let fn_id = self.module.declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)
+        let fn_name = format!("skitter_{}", func as *const Function as usize);
+        let fn_id = self
+            .module
+            .declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
         {
-            let mut jit_func = JITFunc{
+            let mut jit_func = JITFunc {
                 input_fn: ir,
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
                 module: &self.module,
-                builtins: &self.builtins
+                builtins: &self.builtins,
             };
 
             jit_func.compile();
         }
 
-        let compiled_fn = self.module.define_function(fn_id, &mut self.ctx)
+        let compiled_fn = self
+            .module
+            .define_function(fn_id, &mut self.ctx)
             .map_err(|e| e.to_string())?;
         let size = compiled_fn.size as usize;
-        
+
         self.module.clear_context(&mut self.ctx);
         self.module.finalize_definitions();
-        
+
         let code = self.module.get_finalized_function(fn_id);
 
         if crate::VERBOSE {
-            let compiled_slice = unsafe { std::slice::from_raw_parts(code,size) };
+            let compiled_slice = unsafe { std::slice::from_raw_parts(code, size) };
             disassemble(compiled_slice);
         }
-        
+
         Ok(code)
     }
 }
@@ -139,12 +146,11 @@ fn lower_type(ty: Type) -> CType {
         Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
         Type::Bool => Some(types::B1),
         Type::Void => None,
-        _ => panic!("unknown type")
+        _ => panic!("unknown type"),
     }
 }
 
 fn lower_sig(sig: &Signature) -> CSignature {
-
     #[cfg(not(target_os = "windows"))]
     let call_conv = CallConv::SystemV;
 
@@ -163,41 +169,46 @@ fn lower_sig(sig: &Signature) -> CSignature {
     result
 }
 
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug, Copy, Clone)]
 enum LowBinOp {
-    Add, Sub, Mul, Div, Rem,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
     //BitAnd, BitOr, BitXor
-    Gt, Lt
+    Gt,
+    Lt,
 }
 
 impl LowBinOp {
     fn int_cond_code(&self, sign: bool) -> IntCC {
-        match (self,sign) {
-            (LowBinOp::Gt,true) => IntCC::SignedGreaterThan,
-            (LowBinOp::Lt,true) => IntCC::SignedLessThan,
-            _ => panic!("cond code for {:?} {}",self,sign)
+        match (self, sign) {
+            (LowBinOp::Gt, true) => IntCC::SignedGreaterThan,
+            (LowBinOp::Lt, true) => IntCC::SignedLessThan,
+            _ => panic!("cond code for {:?} {}", self, sign),
         }
     }
 }
 
-fn lower_bin_op(op: &BinOp) -> (LowBinOp,bool) {
+fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
     match op {
-        BinOp::Add(_) =>    (LowBinOp::Add, false),
-        BinOp::Sub(_) =>    (LowBinOp::Sub, false),
-        BinOp::Mul(_) =>    (LowBinOp::Mul, false),
-        BinOp::Div(_) =>    (LowBinOp::Div, false),
-        BinOp::Rem(_) =>    (LowBinOp::Rem, false),
+        BinOp::Add(_) => (LowBinOp::Add, false),
+        BinOp::Sub(_) => (LowBinOp::Sub, false),
+        BinOp::Mul(_) => (LowBinOp::Mul, false),
+        BinOp::Div(_) => (LowBinOp::Div, false),
+        BinOp::Rem(_) => (LowBinOp::Rem, false),
 
-        BinOp::AddEq(_) =>  (LowBinOp::Add, true),
-        BinOp::SubEq(_) =>  (LowBinOp::Sub, true),
-        BinOp::MulEq(_) =>  (LowBinOp::Mul, true),
-        BinOp::DivEq(_) =>  (LowBinOp::Div, true),
-        BinOp::RemEq(_) =>  (LowBinOp::Rem, true),
+        BinOp::AddEq(_) => (LowBinOp::Add, true),
+        BinOp::SubEq(_) => (LowBinOp::Sub, true),
+        BinOp::MulEq(_) => (LowBinOp::Mul, true),
+        BinOp::DivEq(_) => (LowBinOp::Div, true),
+        BinOp::RemEq(_) => (LowBinOp::Rem, true),
 
         BinOp::Gt(_) => (LowBinOp::Gt, false),
         BinOp::Lt(_) => (LowBinOp::Lt, false),
 
-        _ => panic!("can't lower op {:?}",op)
+        _ => panic!("can't lower op {:?}", op),
     }
 }
 
@@ -205,7 +216,7 @@ struct JITFunc<'a> {
     input_fn: &'a FuncHIR,
     fn_builder: FunctionBuilder<'a>,
     module: &'a JITModule,
-    builtins: &'a HashMap<String,FuncId>
+    builtins: &'a HashMap<String, FuncId>,
 }
 
 impl<'a> JITFunc<'a> {
@@ -213,27 +224,28 @@ impl<'a> JITFunc<'a> {
         let entry_block = self.fn_builder.create_block();
 
         for index in self.input_fn.vars.iter() {
-            let ExprInfo{expr,ty,..} = &self.input_fn.exprs[*index as usize];
+            let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
                 if let Some(cty) = lower_type(*ty) {
                     let var = Variable::new(*var_id as usize);
                     self.fn_builder.declare_var(var, cty);
                 }
             } else {
-                panic!("can not create var from {:?}",expr);
+                panic!("can not create var from {:?}", expr);
             }
         }
 
-        self.fn_builder.append_block_params_for_function_params(entry_block);
+        self.fn_builder
+            .append_block_params_for_function_params(entry_block);
         self.fn_builder.switch_to_block(entry_block);
         self.fn_builder.seal_block(entry_block);
 
         let param_vals = Vec::from(self.fn_builder.block_params(entry_block));
-        for (var_id,val) in param_vals.iter().enumerate() {
+        for (var_id, val) in param_vals.iter().enumerate() {
             let var = Variable::new(var_id);
             self.fn_builder.def_var(var, *val);
         }
-        
+
         let res = self.lower_expr(self.input_fn.root_expr as u32);
         if let Some(res) = res {
             self.fn_builder.ins().return_(&[res]);
@@ -245,7 +257,7 @@ impl<'a> JITFunc<'a> {
     }
 
     fn lower_expr(&mut self, expr_id: u32) -> CVal {
-        let ExprInfo{expr,ty,..} = &self.input_fn.exprs[expr_id as usize];
+        let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
         let cty = lower_type(*ty);
         match expr {
             /*Expr::DeclVar(n) => {
@@ -256,7 +268,7 @@ impl<'a> JITFunc<'a> {
             Expr::Var(var_id) => {
                 let var = Variable::new(*var_id as usize);
                 Some(self.fn_builder.use_var(var))
-            },
+            }
             Expr::CastPrimitive(arg) => {
                 let src_ty = self.input_fn.exprs[*arg as usize].ty;
 
@@ -271,87 +283,87 @@ impl<'a> JITFunc<'a> {
                     } else if size_src < size_dest {
                         // widening: our type of extension is determined by the source type
                         if src_ty.is_signed() {
-                            Some( self.fn_builder.ins().sextend(cty.unwrap(),arg) )
+                            Some(self.fn_builder.ins().sextend(cty.unwrap(), arg))
                         } else {
-                            Some( self.fn_builder.ins().uextend(cty.unwrap(),arg) )
+                            Some(self.fn_builder.ins().uextend(cty.unwrap(), arg))
                         }
                     } else {
                         // narrowing
-                        Some( self.fn_builder.ins().ireduce(cty.unwrap(),arg) )
+                        Some(self.fn_builder.ins().ireduce(cty.unwrap(), arg))
                     }
                 } else {
                     panic!("non integer casts nyi");
                 }
-            },
-            Expr::Assign(dest,src) => {
+            }
+            Expr::Assign(dest, src) => {
                 let src_val = self.lower_expr(*src);
-                self.lower_assign(*dest,src_val)
-            },
-            Expr::BinOpPrimitive(lhs,op,rhs) => {
+                self.lower_assign(*dest, src_val)
+            }
+            Expr::BinOpPrimitive(lhs, op, rhs) => {
                 let lval = self.lower_expr(*lhs).unwrap();
                 let rval = self.lower_expr(*rhs).unwrap();
 
-                let (op,is_assign) = lower_bin_op(op);
+                let (op, is_assign) = lower_bin_op(op);
 
-                let res_val = Some(match (ty,op) {
-                    (Type::Int(_),LowBinOp::Add) => self.fn_builder.ins().iadd(lval,rval),
-                    (Type::Int(_),LowBinOp::Sub) => self.fn_builder.ins().isub(lval,rval),
-                    (Type::Int(_),LowBinOp::Mul) => self.fn_builder.ins().imul(lval,rval),
-                    (Type::Int(_),LowBinOp::Div) => 
+                let res_val = Some(match (ty, op) {
+                    (Type::Int(_), LowBinOp::Add) => self.fn_builder.ins().iadd(lval, rval),
+                    (Type::Int(_), LowBinOp::Sub) => self.fn_builder.ins().isub(lval, rval),
+                    (Type::Int(_), LowBinOp::Mul) => self.fn_builder.ins().imul(lval, rval),
+                    (Type::Int(_), LowBinOp::Div) => {
                         if ty.is_signed() {
-                            self.fn_builder.ins().sdiv(lval,rval)
+                            self.fn_builder.ins().sdiv(lval, rval)
                         } else {
-                            self.fn_builder.ins().udiv(lval,rval)
-                        },
-                    (Type::Int(_),LowBinOp::Rem) => 
-                        if ty.is_signed() {
-                            self.fn_builder.ins().srem(lval,rval)
-                        } else {
-                            self.fn_builder.ins().urem(lval,rval)
-                        },
-                    (_,LowBinOp::Gt) | (_,LowBinOp::Lt) => {
-                        let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
-                        match arg_ty {
-                            Type::Int(_) => {
-                                self.fn_builder.ins().icmp(op.int_cond_code(arg_ty.is_signed()), lval,rval)
-                            },
-                            _ => panic!("can't compare {:?}",arg_ty)
+                            self.fn_builder.ins().udiv(lval, rval)
                         }
                     }
-                    
-                    _ => panic!("can't lower primitive op {:?} {:?}",op,ty)
+                    (Type::Int(_), LowBinOp::Rem) => {
+                        if ty.is_signed() {
+                            self.fn_builder.ins().srem(lval, rval)
+                        } else {
+                            self.fn_builder.ins().urem(lval, rval)
+                        }
+                    }
+                    (_, LowBinOp::Gt) | (_, LowBinOp::Lt) => {
+                        let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
+                        match arg_ty {
+                            Type::Int(_) => self.fn_builder.ins().icmp(
+                                op.int_cond_code(arg_ty.is_signed()),
+                                lval,
+                                rval,
+                            ),
+                            _ => panic!("can't compare {:?}", arg_ty),
+                        }
+                    }
+
+                    _ => panic!("can't lower primitive op {:?} {:?}", op, ty),
                 });
 
                 if is_assign {
-                    self.lower_assign(*lhs,res_val );
+                    self.lower_assign(*lhs, res_val);
                 }
 
                 res_val
-            },
-            Expr::UnOpPrimitive(arg,op) => {
+            }
+            Expr::UnOpPrimitive(arg, op) => {
                 let arg = self.lower_expr(*arg).unwrap();
 
                 Some(match *op {
                     UnOp::Neg(_) => self.fn_builder.ins().ineg(arg),
-                    _ => panic!("todo op {:?}",op)
+                    _ => panic!("todo op {:?}", op),
                 })
-            },
+            }
             Expr::LitInt(x) => {
                 // TODO we assume the int is register-sized
-                let x: Result<i64,_> = (*x).try_into();
+                let x: Result<i64, _> = (*x).try_into();
                 if let Ok(n) = x {
-                    Some( self.fn_builder.ins().iconst(cty.unwrap(),n) )
+                    Some(self.fn_builder.ins().iconst(cty.unwrap(), n))
                 } else {
                     panic!("int too wide");
                 }
-            },
-            Expr::LitBool(x) => {
-                Some( self.fn_builder.ins().bconst(cty.unwrap(),*x) )
-            },
-            Expr::Block(block) => {
-                self.lower_block(block)
-            },
-            Expr::IfElse(cond,then_block,else_expr) => {
+            }
+            Expr::LitBool(x) => Some(self.fn_builder.ins().bconst(cty.unwrap(), *x)),
+            Expr::Block(block) => self.lower_block(block),
+            Expr::IfElse(cond, then_block, else_expr) => {
                 let then_cb = self.fn_builder.create_block();
                 let else_cb = self.fn_builder.create_block();
                 let final_cb = self.fn_builder.create_block();
@@ -385,17 +397,17 @@ impl<'a> JITFunc<'a> {
                 // final, unified block
                 self.fn_builder.switch_to_block(final_cb);
                 self.fn_builder.seal_block(final_cb);
-                
+
                 let res = if let Some(cty) = cty {
                     self.fn_builder.append_block_param(final_cb, cty);
-                    Some( self.fn_builder.block_params(final_cb)[0] )
+                    Some(self.fn_builder.block_params(final_cb)[0])
                 } else {
                     None
                 };
 
                 res
-            },
-            Expr::While(cond,body_block) => {
+            }
+            Expr::While(cond, body_block) => {
                 let cond_cb = self.fn_builder.create_block();
                 let body_cb = self.fn_builder.create_block();
                 let final_cb = self.fn_builder.create_block();
@@ -424,10 +436,15 @@ impl<'a> JITFunc<'a> {
                 self.fn_builder.switch_to_block(final_cb);
 
                 None
-            },
-            Expr::CallBuiltin(name,args) => {
-                let fn_id = self.builtins.get(name).expect("failed to lookup builtin id");
-                let fn_ref = self.module.declare_func_in_func(*fn_id, self.fn_builder.func);
+            }
+            Expr::CallBuiltin(name, args) => {
+                let fn_id = self
+                    .builtins
+                    .get(name)
+                    .expect("failed to lookup builtin id");
+                let fn_ref = self
+                    .module
+                    .declare_func_in_func(*fn_id, self.fn_builder.func);
 
                 let mut c_args = Vec::new();
                 for arg in args {
@@ -436,16 +453,16 @@ impl<'a> JITFunc<'a> {
                     }
                 }
 
-                let call_inst = self.fn_builder.ins().call(fn_ref,&c_args);
+                let call_inst = self.fn_builder.ins().call(fn_ref, &c_args);
 
                 let call_res = self.fn_builder.inst_results(call_inst);
                 if call_res.len() > 0 {
-                    Some( call_res[0] )
+                    Some(call_res[0])
                 } else {
                     None
                 }
-            },
-            Expr::Call(func,args) => {
+            }
+            Expr::Call(func, args) => {
                 let jit_cb = self.fn_builder.create_block();
                 let next_cb = self.fn_builder.create_block();
 
@@ -453,26 +470,34 @@ impl<'a> JITFunc<'a> {
                 let sig_id = self.fn_builder.import_signature(c_sig);
 
                 let data_ptr = *func as *const Function;
-                let data_val = self.fn_builder.ins().iconst(ptr_ty(), data_ptr as i64 );
-                let fn_val = self.fn_builder.ins().load(ptr_ty(),MemFlags::trusted(),data_val,0);
+                let data_val = self.fn_builder.ins().iconst(ptr_ty(), data_ptr as i64);
+                let fn_val = self
+                    .fn_builder
+                    .ins()
+                    .load(ptr_ty(), MemFlags::trusted(), data_val, 0);
 
-                self.fn_builder.ins().brz(fn_val,jit_cb,&[]);
-                self.fn_builder.ins().jump(next_cb,&[fn_val]);
+                self.fn_builder.ins().brz(fn_val, jit_cb, &[]);
+                self.fn_builder.ins().jump(next_cb, &[fn_val]);
 
                 // jit long-path
                 {
                     self.fn_builder.seal_block(jit_cb);
                     self.fn_builder.switch_to_block(jit_cb);
 
-                    let jit_id = self.builtins.get("jit_compile").expect("failed to lookup builtin id");
-                    let jit_ref = self.module.declare_func_in_func(*jit_id, self.fn_builder.func);
+                    let jit_id = self
+                        .builtins
+                        .get("jit_compile")
+                        .expect("failed to lookup builtin id");
+                    let jit_ref = self
+                        .module
+                        .declare_func_in_func(*jit_id, self.fn_builder.func);
 
-                    let jit_inst = self.fn_builder.ins().call(jit_ref,&[data_val]);
+                    let jit_inst = self.fn_builder.ins().call(jit_ref, &[data_val]);
                     let fn_val = self.fn_builder.inst_results(jit_inst)[0];
 
-                    self.fn_builder.ins().jump(next_cb,&[fn_val]);
+                    self.fn_builder.ins().jump(next_cb, &[fn_val]);
                 }
-                
+
                 self.fn_builder.seal_block(next_cb);
                 self.fn_builder.switch_to_block(next_cb);
 
@@ -490,12 +515,12 @@ impl<'a> JITFunc<'a> {
 
                 let call_res = self.fn_builder.inst_results(call_inst);
                 if call_res.len() > 0 {
-                    Some( call_res[0] )
+                    Some(call_res[0])
                 } else {
                     None
                 }
-            },
-            _ => panic!("todo lower expr {:?}",expr)
+            }
+            _ => panic!("todo lower expr {:?}", expr),
         }
     }
 
@@ -513,14 +538,14 @@ impl<'a> JITFunc<'a> {
 
     fn lower_assign(&mut self, dest_id: u32, src: CVal) -> CVal {
         if let Some(src) = src {
-            let ExprInfo{expr,ty,..} = &self.input_fn.exprs[dest_id as usize];
+            let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[dest_id as usize];
             let cty = lower_type(*ty);
             match expr {
                 Expr::Var(var_id) => {
                     let var = Variable::new(*var_id as usize);
                     self.fn_builder.def_var(var, src);
-                },
-                _ => panic!("todo lower assignment {:?}",expr)
+                }
+                _ => panic!("todo lower assignment {:?}", expr),
             }
         }
         src

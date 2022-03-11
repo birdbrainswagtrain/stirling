@@ -1,11 +1,10 @@
-
-mod hir;
-mod jit;
 mod builtin;
 mod disassemble;
+mod hir;
+mod jit;
 
+use crate::hir::item::{Function, Item, ItemName, Scope};
 use crate::jit::jit_compile;
-use crate::hir::item::{Item, ItemName, Function, Scope};
 
 use memoffset::offset_of;
 
@@ -22,11 +21,11 @@ fn main() {
     let module = Scope::from_syn_file(syn_tree);
     let module = module.borrow();
 
-    let compiled_main = if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap() {
-
+    let compiled_main = if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap()
+    {
         jit_compile(func);
 
-        unsafe { std::mem::transmute::<_, fn() >(func.c_fn.get()) }
+        unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) }
     } else {
         panic!("can't find main");
     };
@@ -35,6 +34,6 @@ fn main() {
 }
 
 fn check_abi() {
-    assert_eq!(std::mem::size_of::<usize>(),PTR_WIDTH);
+    assert_eq!(std::mem::size_of::<usize>(), PTR_WIDTH);
     assert_eq!(offset_of!(Function, c_fn), 0);
 }
