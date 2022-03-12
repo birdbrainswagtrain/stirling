@@ -105,6 +105,7 @@ impl FuncHIR {
                     OpClass::Bitwise => {
                         (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
                     }
+                    OpClass::Logical => true,
                     OpClass::Eq => lty.is_primitive() && rty.is_primitive(),
                     OpClass::BitShift => panic!("shift"),
                 };
@@ -243,9 +244,8 @@ impl FuncHIR {
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
-        let op_kind = op_class(&op);
 
-        match op_kind {
+        match op_class(&op) {
             OpClass::Arithmetic | OpClass::Bitwise => self.check_match_3(index, lhs, rhs),
             OpClass::Ord | OpClass::Eq => {
                 let mutated = self.update_expr_type(index, Type::Bool);
@@ -254,6 +254,12 @@ impl FuncHIR {
                     res.set_mutated();
                 }
                 res
+            }
+            OpClass::Logical => {
+                let m1 = self.update_expr_type(index, Type::Bool);
+                let m2 = self.update_expr_type(lhs, Type::Bool);
+                let m3 = self.update_expr_type(rhs, Type::Bool);
+                CheckResult{ mutated: m1 || m2 || m3, resolved: true }
             }
             OpClass::BitShift => panic!("shift"),
         }
@@ -331,6 +337,9 @@ enum OpClass {
     Bitwise,
     // apply to ints and bools
     // argument types and result type all match
+    Logical,
+    // apply to bools
+    // all types must be bools
     BitShift,
     // TODO
 }
@@ -360,6 +369,9 @@ fn op_class(op: &syn::BinOp) -> OpClass {
         | BinOp::BitXor(_)
         | BinOp::BitXorEq(_) => OpClass::Bitwise,
 
-        _ => panic!("todo op kind {:?}", op),
+        BinOp::Or(_)
+        | BinOp::And(_) => OpClass::Logical,
+
+        _ => panic!("todo op class {:?}", op),
     }
 }

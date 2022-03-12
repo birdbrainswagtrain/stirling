@@ -188,6 +188,9 @@ enum LowBinOp {
     BitAnd,
     BitOr,
     BitXor,
+
+    LogicAnd,
+    LogicOr
 }
 
 impl LowBinOp {
@@ -252,6 +255,9 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
         BinOp::BitAndEq(_) => (LowBinOp::BitAnd, true),
         BinOp::BitOrEq(_) => (LowBinOp::BitOr, true),
         BinOp::BitXorEq(_) => (LowBinOp::BitXor, true),
+
+        BinOp::And(_) => (LowBinOp::LogicAnd, false),
+        BinOp::Or(_) => (LowBinOp::LogicOr, false),
 
         _ => panic!("can't lower op {:?}", op),
     }
@@ -345,10 +351,39 @@ impl<'a> JITFunc<'a> {
                 self.lower_assign(*dest, src_val)
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => {
+                let (op, is_assign) = lower_bin_op(op);
+
+                if op == LowBinOp::LogicAnd || op == LowBinOp::LogicOr {
+                    let right_cb = self.fn_builder.create_block();
+                    let final_cb = self.fn_builder.create_block();
+    
+                    let cond = self.lower_expr(*lhs).unwrap();
+    
+                    if op == LowBinOp::LogicAnd {
+                        self.fn_builder.ins().brnz(cond, right_cb, &[]);
+                    } else {
+                        self.fn_builder.ins().brz(cond, right_cb, &[]);
+                    }
+                    self.fn_builder.ins().jump(final_cb, &[cond]);
+    
+                    self.fn_builder.seal_block(right_cb);
+                    self.fn_builder.switch_to_block(right_cb);
+    
+                    let rval = self.lower_expr(*rhs).unwrap();
+
+                    self.fn_builder.ins().jump(final_cb, &[rval]);
+    
+                    self.fn_builder.seal_block(final_cb);
+                    self.fn_builder.switch_to_block(final_cb);
+    
+                    self.fn_builder.append_block_param(final_cb, types::B1);
+                    return Some(self.fn_builder.block_params(final_cb)[0]);
+                }
+
+
                 let lval = self.lower_expr(*lhs).unwrap();
                 let rval = self.lower_expr(*rhs).unwrap();
 
-                let (op, is_assign) = lower_bin_op(op);
 
                 let res_val = Some(match (ty, op) {
                     (Type::Int(_), LowBinOp::Add) => self.fn_builder.ins().iadd(lval, rval),
@@ -393,7 +428,7 @@ impl<'a> JITFunc<'a> {
                         }
                     }
 
-                    _ => panic!("can't lower primitive op {:?} {:?}", ty, op),
+                    _ => panic!("can't compile primitive op {:?} {:?}", ty, op),
                 });
 
                 if is_assign {

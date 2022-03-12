@@ -1,6 +1,6 @@
 ===> Ziz
 
-cargo build --release && time ./target/release/ziz
+cargo build --release && time ./target/release/skitter
 
 jit     0m4.582s
 

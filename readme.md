@@ -5,7 +5,7 @@
 ## Features
 
 ### Types
-- Bools: Literals, "bitwise", equality. TODO: logic, DO NOT IMPLEMENT ORDINAL COMPARISONS
+- Bools: Literals, logic, bitwise (IE non-lazy logic), equality. DO NOT IMPLEMENT ORDINAL COMPARISONS
 - Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts
 - Floats: TODO NEXT
 

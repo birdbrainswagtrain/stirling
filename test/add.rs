@@ -49,6 +49,9 @@ fn bad() -> bool {
 }
 
 fn main() {
-    true || bad();
-    false && bad();
+    _skitter_builtin::print_i32(111);
+    print_bool( true || bad() );
+    _skitter_builtin::print_i32(222);
+    print_bool( false && bad() );
+    _skitter_builtin::print_i32(333);
 }
