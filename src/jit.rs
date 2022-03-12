@@ -30,7 +30,7 @@ fn ptr_ty() -> cranelift::prelude::Type {
     types::I64
 }
 
-pub fn jit_compile(func: &Function) -> *const u8 {
+pub extern "C" fn jit_compile(func: &Function) -> *const u8 {
     let start = Instant::now();
     let result = JIT_CONTEXT.with(|rc| {
         let mut jit = rc.borrow_mut();
