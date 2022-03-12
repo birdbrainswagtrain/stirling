@@ -44,15 +44,11 @@ fn call_tiny() {
     _skitter_builtin::print_i32(sum)
 }
 
-fn bad() {
+fn bad() -> bool {
     "it doesn't even support strings" >> lmao
 }
 
 fn main() {
-    let a = false;
-    let b = true;
-    print_bool(a > b);
-    print_bool(a < b);
-    print_bool(a >= b);
-    print_bool(a <= b);
+    true || bad();
+    false && bad();
 }

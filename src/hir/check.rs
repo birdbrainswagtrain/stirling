@@ -105,15 +105,15 @@ impl FuncHIR {
                     OpClass::Bitwise => {
                         (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
                     }
+                    OpClass::Eq => lty.is_primitive() && rty.is_primitive(),
                     OpClass::BitShift => panic!("shift"),
-                    OpClass::Eq => panic!("eq"),
                 };
 
                 if is_primitive {
                     self.exprs[index as usize].expr = Expr::BinOpPrimitive(lhs, op, rhs);
                     self.check_bin_op(index, lhs, op, rhs).set_mutated()
                 } else {
-                    panic!("todo more binary stuff");
+                    panic!("todo more binary stuff {:?}",op);
                 }
             }
 
@@ -350,6 +350,8 @@ fn op_class(op: &syn::BinOp) -> OpClass {
         | BinOp::RemEq(_) => OpClass::Arithmetic,
 
         BinOp::Lt(_) | BinOp::Gt(_) | BinOp::Le(_) | BinOp::Ge(_) => OpClass::Ord,
+
+        BinOp::Eq(_) | BinOp::Ne(_) => OpClass::Eq,
 
         BinOp::BitAnd(_)
         | BinOp::BitAndEq(_)

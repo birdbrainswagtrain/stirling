@@ -5,8 +5,9 @@
 ## Features
 
 ### Types
-- Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts, equality
-- Bools: Literals, "bitwise", TODO: equality, logic, DO NOT IMPLEMENT ORDINAL COMPARISONS
+- Bools: Literals, "bitwise", equality. TODO: logic, DO NOT IMPLEMENT ORDINAL COMPARISONS
+- Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts
+- Floats: TODO NEXT
 
 ### Control Flow
 - blocks, can yield values

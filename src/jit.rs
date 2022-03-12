@@ -143,6 +143,7 @@ fn lower_type(ty: Type) -> CType {
     match ty {
         Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
         Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
+        Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => Some(types::I8),
         Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
         Type::Bool => Some(types::B1),
         Type::Void => None,
@@ -169,7 +170,7 @@ fn lower_sig(sig: &Signature) -> CSignature {
     result
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum LowBinOp {
     Add,
     Sub,
@@ -213,6 +214,9 @@ impl LowBinOp {
             (LowBinOp::Lt, false) => IntCC::UnsignedLessThan,
             (LowBinOp::Ge, false) => IntCC::UnsignedGreaterThanOrEqual,
             (LowBinOp::Le, false) => IntCC::UnsignedLessThanOrEqual,
+
+            (LowBinOp::Eq, _) => IntCC::Equal,
+            (LowBinOp::Ne, _) => IntCC::NotEqual,
 
             _ => panic!("cond code for {:?} {}", self, sign),
         }
@@ -376,6 +380,15 @@ impl<'a> JITFunc<'a> {
                                 lval,
                                 rval,
                             ),
+                            Type::Bool =>
+                            if op == LowBinOp::Eq {
+                                let tmp = self.fn_builder.ins().bxor(lval,rval);
+                                self.fn_builder.ins().bnot(tmp)
+                            } else if op == LowBinOp::Ne {
+                                self.fn_builder.ins().bxor(lval,rval)
+                            } else {
+                                panic!("bad primitive bool compare {:?}",op);
+                            },
                             _ => panic!("can't compare {:?}", arg_ty),
                         }
                     }

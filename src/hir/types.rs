@@ -36,6 +36,8 @@ pub enum Type {
     Unknown,
     IntUnknown,
     Int(TypeInt),
+    FloatUnknown,
+    Float(TypeFloat),
     Bool,
     Void,
     Never,
@@ -56,6 +58,12 @@ pub enum TypeInt {
     U32,
     U16,
     U8,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TypeFloat {
+    F64,
+    F32
 }
 
 impl Type {
@@ -97,14 +105,14 @@ impl Type {
 
     pub fn is_unknown(&self) -> bool {
         match self {
-            Type::Unknown | Type::IntUnknown => true,
+            Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             _ => false,
         }
     }
 
     pub fn is_number(&self) -> bool {
         match self {
-            Type::IntUnknown | Type::Int(_) => true,
+            Type::IntUnknown | Type::Int(_) | Type::FloatUnknown | Type::Float(_) => true,
             _ => false,
         }
     }
@@ -112,6 +120,22 @@ impl Type {
     pub fn is_int(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        match self {
+            Type::FloatUnknown | Type::Float(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            Type::IntUnknown | Type::Int(_) |
+            Type::FloatUnknown | Type::Float(_) |
+            Type::Void | Type::Bool => true,
             _ => false,
         }
     }
