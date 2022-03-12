@@ -189,6 +189,9 @@ enum LowBinOp {
     BitOr,
     BitXor,
 
+    BitShiftLeft,
+    BitShiftRight,
+
     LogicAnd,
     LogicOr
 }
@@ -255,6 +258,12 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
         BinOp::BitAndEq(_) => (LowBinOp::BitAnd, true),
         BinOp::BitOrEq(_) => (LowBinOp::BitOr, true),
         BinOp::BitXorEq(_) => (LowBinOp::BitXor, true),
+
+        BinOp::Shl(_) => (LowBinOp::BitShiftLeft, false),
+        BinOp::Shr(_) => (LowBinOp::BitShiftRight, false),
+
+        BinOp::ShlEq(_) => (LowBinOp::BitShiftLeft, true),
+        BinOp::ShrEq(_) => (LowBinOp::BitShiftRight, true),
 
         BinOp::And(_) => (LowBinOp::LogicAnd, false),
         BinOp::Or(_) => (LowBinOp::LogicOr, false),
@@ -403,6 +412,14 @@ impl<'a> JITFunc<'a> {
                             self.fn_builder.ins().urem(lval, rval)
                         }
                     }
+                    (Type::Int(_), LowBinOp::BitShiftLeft) => self.fn_builder.ins().ishl(lval, rval),
+                    (Type::Int(_), LowBinOp::BitShiftRight) => {
+                        if ty.is_signed() {
+                            self.fn_builder.ins().sshr(lval, rval)
+                        } else {
+                            self.fn_builder.ins().ushr(lval, rval)
+                        }
+                    }
                     (_, LowBinOp::BitAnd) => self.fn_builder.ins().band(lval, rval),
                     (_, LowBinOp::BitOr) => self.fn_builder.ins().bor(lval, rval),
                     (_, LowBinOp::BitXor) => self.fn_builder.ins().bxor(lval, rval),
@@ -442,6 +459,7 @@ impl<'a> JITFunc<'a> {
 
                 Some(match *op {
                     UnOp::Neg(_) => self.fn_builder.ins().ineg(arg),
+                    UnOp::Not(_) => self.fn_builder.ins().bnot(arg),
                     _ => panic!("todo op {:?}", op),
                 })
             }

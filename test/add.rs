@@ -49,9 +49,17 @@ fn bad() -> bool {
 }
 
 fn main() {
-    _skitter_builtin::print_i32(111);
-    print_bool( true || bad() );
-    _skitter_builtin::print_i32(222);
-    print_bool( false && bad() );
-    _skitter_builtin::print_i32(333);
+    _skitter_builtin::print_i32((999 >> 2u8) as i32);
+
+    print_bool( false );
+    print_bool( !false );
+    print_bool( !!false );
+    print_bool( !!!false );
+    print_bool( !!!!false );
+
+    _skitter_builtin::print_i32((1u16) as i32);
+    _skitter_builtin::print_i32((!1u16) as i32);
+    _skitter_builtin::print_i32((!!1u16) as i32);
+    _skitter_builtin::print_i32((!!!1u16) as i32);
+    _skitter_builtin::print_i32((!!!!1u16) as i32);
 }

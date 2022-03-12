@@ -107,7 +107,7 @@ impl FuncHIR {
                     }
                     OpClass::Logical => true,
                     OpClass::Eq => lty.is_primitive() && rty.is_primitive(),
-                    OpClass::BitShift => panic!("shift"),
+                    OpClass::BitShift => lty.is_int() && rty.is_int(),
                 };
 
                 if is_primitive {
@@ -261,7 +261,10 @@ impl FuncHIR {
                 let m3 = self.update_expr_type(rhs, Type::Bool);
                 CheckResult{ mutated: m1 || m2 || m3, resolved: true }
             }
-            OpClass::BitShift => panic!("shift"),
+            OpClass::BitShift => {
+                // only lhs must match
+                self.check_match_2(index,lhs)
+            }
         }
     }
 
@@ -368,6 +371,11 @@ fn op_class(op: &syn::BinOp) -> OpClass {
         | BinOp::BitOrEq(_)
         | BinOp::BitXor(_)
         | BinOp::BitXorEq(_) => OpClass::Bitwise,
+
+        BinOp::Shl(_)
+        | BinOp::ShlEq(_)
+        | BinOp::Shr(_)
+        | BinOp::ShrEq(_) => OpClass::BitShift,
 
         BinOp::Or(_)
         | BinOp::And(_) => OpClass::Logical,

@@ -5,9 +5,10 @@
 ## Features
 
 ### Types
-- Bools: Literals, logic, bitwise (IE non-lazy logic), equality. DO NOT IMPLEMENT ORDINAL COMPARISONS
-- Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths. TODO shifts
-- Floats: TODO NEXT
+- Bools: Literals, logic, bitwise (IE non-lazy logic), equality. **(TODO as casts)**
+- Chars: TODO NEXT (just literals, eq, ord)
+- Integers: Literals, arithmetic, bitwise, comparisons, `as` casts between various widths.
+- Floats: TODO NEXT-ISH
 
 ### Control Flow
 - blocks, can yield values
@@ -19,4 +20,4 @@
 - i128 / u128 constants may not work.
 
 ### Not Supported
-- The `mut` keyword is ignored. All values are assumed to be mutable.
+- The `mut` keyword is ignored. All values and references are assumed to be mutable.
