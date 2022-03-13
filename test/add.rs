@@ -49,10 +49,22 @@ fn bad() -> bool {
 }
 
 fn main() {
+
+    //let x = 1.0;
+    //let y = 5.5;
+
+    let x = (-1) as u128;
+    let y = x >> 48;
+
+    let m = y - 60000;
+
+    _skitter_builtin::print_i32((m/5) as i32);
+
+    /*
     print_bool('a' == 'a');
     print_bool('a' == 'b');
     _skitter_builtin::print_i32(11111);
     print_bool('A' > 'a');
     print_bool('A' == 'a');
-    print_bool('A' < 'a');
+    print_bool('A' < 'a');*/
 }

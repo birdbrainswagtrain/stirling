@@ -167,6 +167,7 @@ impl Type {
 
     pub fn byte_size(&self) -> usize {
         match self {
+            Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => 16,
             Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => 8,
             Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => 4,
             Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => 2,

@@ -141,6 +141,8 @@ impl JIT {
 
 fn lower_type(ty: Type) -> CType {
     match ty {
+        Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => panic!("128 bit integers are broken"),
+        Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => Some(types::I64),
         Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
         Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
         Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => Some(types::I8),
@@ -321,11 +323,6 @@ impl<'a> JITFunc<'a> {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
         let cty = lower_type(*ty);
         match expr {
-            /*Expr::DeclVar(n) => {
-                let ty = lower_type(expr.ty);
-                let var = Variable::new(n);
-                self.fn_builder.declare_var(var, ty);
-            },*/
             Expr::Var(var_id) => {
                 let var = Variable::new(*var_id as usize);
                 Some(self.fn_builder.use_var(var))
