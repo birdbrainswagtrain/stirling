@@ -87,7 +87,7 @@ impl FuncHIR {
         let info = &self.exprs[index as usize];
 
         match info.expr {
-            Expr::LitInt(_) | Expr::Var(_) | Expr::LitBool(_) | Expr::CastPrimitive(_) => {
+            Expr::Var(_) | Expr::LitInt(_) | Expr::LitChar(_) | Expr::LitBool(_) | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {
                     mutated: false,
@@ -101,12 +101,15 @@ impl FuncHIR {
                 let rty = self.exprs[rhs as usize].ty;
 
                 let is_primitive = match op_class(&op) {
-                    OpClass::Arithmetic | OpClass::Ord => lty.is_number() && rty.is_number(),
+                    OpClass::Arithmetic => lty.is_number() && rty.is_number(),
+                    OpClass::Ord => {
+                        (lty.is_number() && rty.is_number()) || (lty == Type::Char && rty == Type::Char)
+                    }
                     OpClass::Bitwise => {
                         (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
                     }
                     OpClass::Logical => true,
-                    OpClass::Eq => lty.is_primitive() && rty.is_primitive(),
+                    OpClass::Eq => lty.uses_value_eq() && rty.uses_value_eq(),
                     OpClass::BitShift => lty.is_int() && rty.is_int(),
                 };
 

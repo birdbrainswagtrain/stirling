@@ -232,6 +232,10 @@ impl Block {
                 syn::Lit::Bool(syn::LitBool { value, .. }) => {
                     code.push_expr(Expr::LitBool(*value), Type::Bool)
                 }
+                syn::Lit::Char(char) => {
+                    let value = char.value();
+                    code.push_expr(Expr::LitChar(value), Type::Char)
+                }
                 _ => panic!("todo handle lit {:?}", lit),
             },
             // control flow-ish stuff
@@ -304,6 +308,7 @@ pub enum Expr {
     UnOpPrimitive(u32, syn::UnOp),
     LitInt(u128),
     LitBool(bool),
+    LitChar(char),
     Assign(u32, u32),
     CastPrimitive(u32),
     If(u32, Box<Block>, Option<u32>),

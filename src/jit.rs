@@ -146,6 +146,7 @@ fn lower_type(ty: Type) -> CType {
         Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => Some(types::I8),
         Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
         Type::Bool => Some(types::B1),
+        Type::Char => Some(types::I32),
         Type::Void => None,
         _ => panic!("unknown type"),
     }
@@ -427,20 +428,20 @@ impl<'a> JITFunc<'a> {
                     _ if op.is_compare() => {
                         let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
-                            Type::Int(_) => self.fn_builder.ins().icmp(
+                            Type::Int(_) | Type::Char => self.fn_builder.ins().icmp(
                                 op.int_cond_code(arg_ty.is_signed()),
                                 lval,
                                 rval,
                             ),
                             Type::Bool =>
-                            if op == LowBinOp::Eq {
-                                let tmp = self.fn_builder.ins().bxor(lval,rval);
-                                self.fn_builder.ins().bnot(tmp)
-                            } else if op == LowBinOp::Ne {
-                                self.fn_builder.ins().bxor(lval,rval)
-                            } else {
-                                panic!("bad primitive bool compare {:?}",op);
-                            },
+                                if op == LowBinOp::Eq {
+                                    let tmp = self.fn_builder.ins().bxor(lval,rval);
+                                    self.fn_builder.ins().bnot(tmp)
+                                } else if op == LowBinOp::Ne {
+                                    self.fn_builder.ins().bxor(lval,rval)
+                                } else {
+                                    panic!("bad primitive bool compare {:?}",op);
+                                },
                             _ => panic!("can't compare {:?}", arg_ty),
                         }
                     }
@@ -471,6 +472,10 @@ impl<'a> JITFunc<'a> {
                 } else {
                     panic!("int too wide");
                 }
+            }
+            Expr::LitChar(x) => {
+                let x = *x as i64;
+                Some(self.fn_builder.ins().iconst(cty.unwrap(), x))
             }
             Expr::LitBool(x) => Some(self.fn_builder.ins().bconst(cty.unwrap(), *x)),
             Expr::Block(block) => self.lower_block(block),

@@ -39,6 +39,7 @@ pub enum Type {
     FloatUnknown,
     Float(TypeFloat),
     Bool,
+    Char,
     Void,
     Never,
 }
@@ -98,6 +99,7 @@ impl Type {
             "u8" => Some(Type::Int(TypeInt::U8)),
 
             "bool" => Some(Type::Bool),
+            "char" => Some(Type::Char),
 
             _ => None,
         }
@@ -131,11 +133,11 @@ impl Type {
         }
     }
 
-    pub fn is_primitive(&self) -> bool {
+    pub fn uses_value_eq(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) |
-            Type::FloatUnknown | Type::Float(_) |
-            Type::Void | Type::Bool => true,
+            //Type::FloatUnknown | Type::Float(_) |
+            Type::Bool | Type::Char => true,
             _ => false,
         }
     }
@@ -156,6 +158,8 @@ impl Type {
                 | TypeInt::U16
                 | TypeInt::U8 => false,
             }
+        } else if *self == Type::Char {
+            false
         } else {
             panic!("can't check signed-ness of {:?}", self)
         }
