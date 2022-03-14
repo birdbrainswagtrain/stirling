@@ -117,7 +117,7 @@ impl FuncHIR {
                         (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
                     }
                     OpClass::Logical => true,
-                    OpClass::Eq => lty.uses_value_eq() && rty.uses_value_eq(),
+                    OpClass::Eq => lty.is_prim_eq() && rty.is_prim_eq(),
                     OpClass::BitShift => lty.is_int() && rty.is_int(),
                 };
 

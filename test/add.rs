@@ -52,12 +52,10 @@ fn main() {
 
     let z = 1.0;
 
-    while true {
-        z += 0.1;
-        z %= 100.0;
-        //_skitter_builtin::print_f64(z);
+    while z <= 100.0 {
+        _skitter_builtin::print_f64(z);
+        z += 1.0;
     }
-
     
     /*
     print_bool('a' == 'a');

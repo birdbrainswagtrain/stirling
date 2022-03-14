@@ -133,10 +133,10 @@ impl Type {
         }
     }
 
-    pub fn uses_value_eq(&self) -> bool {
+    pub fn is_prim_eq(&self) -> bool {
         match self {
             Type::IntUnknown | Type::Int(_) |
-            //Type::FloatUnknown | Type::Float(_) |
+            Type::FloatUnknown | Type::Float(_) |
             Type::Bool | Type::Char => true,
             _ => false,
         }

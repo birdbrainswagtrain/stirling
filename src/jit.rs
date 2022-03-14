@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use cranelift::codegen::Context;
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift::prelude::MemFlags;
+use cranelift::prelude::{MemFlags, FloatCC};
 use cranelift::prelude::{
     isa::CallConv, types, AbiParam, EntityRef, InstBuilder, IntCC, Value, Variable,
 };
@@ -235,7 +235,20 @@ impl LowBinOp {
             (LowBinOp::Eq, _) => IntCC::Equal,
             (LowBinOp::Ne, _) => IntCC::NotEqual,
 
-            _ => panic!("cond code for {:?} {}", self, sign),
+            _ => panic!("int cond code for {:?} {}", self, sign),
+        }
+    }
+
+    fn float_cond_code(&self) -> FloatCC {
+        match self {
+            LowBinOp::Gt => FloatCC::GreaterThan,
+            LowBinOp::Lt => FloatCC::LessThan,
+            LowBinOp::Ge => FloatCC::GreaterThanOrEqual,
+            LowBinOp::Le => FloatCC::LessThanOrEqual,
+
+            LowBinOp::Eq => FloatCC::Equal,
+            LowBinOp::Ne => FloatCC::NotEqual,
+            _ => panic!("float cond code for {:?}", self)
         }
     }
 }
@@ -450,6 +463,11 @@ impl<'a> JITFunc<'a> {
                                 lval,
                                 rval,
                             ),
+                            Type::Float(_) => self.fn_builder.ins().fcmp(
+                                op.float_cond_code(),
+                                lval,
+                                rval,
+                            ),
                             Type::Bool => {
                                 if op == LowBinOp::Eq {
                                     let tmp = self.fn_builder.ins().bxor(lval, rval);
@@ -459,7 +477,7 @@ impl<'a> JITFunc<'a> {
                                 } else {
                                     panic!("bad primitive bool compare {:?}", op);
                                 }
-                            }
+                            },
                             _ => panic!("can't compare {:?}", arg_ty),
                         }
                     }

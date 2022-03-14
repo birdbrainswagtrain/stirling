@@ -8,7 +8,7 @@
 - Bools: Literals, logic, bitwise (IE non-lazy logic), equality. **(TODO as casts)**
 - Chars: Literals, comparisons.
 - Integers (excluding i128 / u128): Literals, arithmetic, bitwise, comparisons, `as` casts between various widths.
-- Floats: TODO NEXT
+- Floats: Literals, arithmetic, comparisons.
 
 ### Control Flow
 - blocks, can yield values
