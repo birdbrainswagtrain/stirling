@@ -18,7 +18,7 @@ use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
 use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
-use crate::hir::types::{Signature, Type, TypeInt};
+use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
 use crate::PTR_WIDTH;
 
 type CSignature = cranelift::prelude::Signature;
@@ -141,12 +141,20 @@ impl JIT {
 
 fn lower_type(ty: Type) -> CType {
     match ty {
-        Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => panic!("128 bit integers are broken"),
+        // Ints
+        Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => {
+            panic!("128 bit integers are broken")
+        }
         Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => Some(types::I64),
         Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
         Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
         Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => Some(types::I8),
         Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
+
+        // Floats
+        Type::Float(TypeFloat::F64) => Some(types::F64),
+        Type::Float(TypeFloat::F32) => Some(types::F32),
+
         Type::Bool => Some(types::B1),
         Type::Char => Some(types::I32),
         Type::Void => None,
@@ -196,19 +204,19 @@ enum LowBinOp {
     BitShiftRight,
 
     LogicAnd,
-    LogicOr
+    LogicOr,
 }
 
 impl LowBinOp {
     fn is_compare(&self) -> bool {
         match self {
-            LowBinOp::Gt |
-            LowBinOp::Lt |
-            LowBinOp::Ge |
-            LowBinOp::Le |
-            LowBinOp::Eq |
-            LowBinOp::Ne => true,
-            _ => false
+            LowBinOp::Gt
+            | LowBinOp::Lt
+            | LowBinOp::Ge
+            | LowBinOp::Le
+            | LowBinOp::Eq
+            | LowBinOp::Ne => true,
+            _ => false,
         }
     }
 
@@ -363,34 +371,32 @@ impl<'a> JITFunc<'a> {
                 if op == LowBinOp::LogicAnd || op == LowBinOp::LogicOr {
                     let right_cb = self.fn_builder.create_block();
                     let final_cb = self.fn_builder.create_block();
-    
+
                     let cond = self.lower_expr(*lhs).unwrap();
-    
+
                     if op == LowBinOp::LogicAnd {
                         self.fn_builder.ins().brnz(cond, right_cb, &[]);
                     } else {
                         self.fn_builder.ins().brz(cond, right_cb, &[]);
                     }
                     self.fn_builder.ins().jump(final_cb, &[cond]);
-    
+
                     self.fn_builder.seal_block(right_cb);
                     self.fn_builder.switch_to_block(right_cb);
-    
+
                     let rval = self.lower_expr(*rhs).unwrap();
 
                     self.fn_builder.ins().jump(final_cb, &[rval]);
-    
+
                     self.fn_builder.seal_block(final_cb);
                     self.fn_builder.switch_to_block(final_cb);
-    
+
                     self.fn_builder.append_block_param(final_cb, types::B1);
                     return Some(self.fn_builder.block_params(final_cb)[0]);
                 }
 
-
                 let lval = self.lower_expr(*lhs).unwrap();
                 let rval = self.lower_expr(*rhs).unwrap();
-
 
                 let res_val = Some(match (ty, op) {
                     (Type::Int(_), LowBinOp::Add) => self.fn_builder.ins().iadd(lval, rval),
@@ -410,7 +416,9 @@ impl<'a> JITFunc<'a> {
                             self.fn_builder.ins().urem(lval, rval)
                         }
                     }
-                    (Type::Int(_), LowBinOp::BitShiftLeft) => self.fn_builder.ins().ishl(lval, rval),
+                    (Type::Int(_), LowBinOp::BitShiftLeft) => {
+                        self.fn_builder.ins().ishl(lval, rval)
+                    }
                     (Type::Int(_), LowBinOp::BitShiftRight) => {
                         if ty.is_signed() {
                             self.fn_builder.ins().sshr(lval, rval)
@@ -422,6 +430,18 @@ impl<'a> JITFunc<'a> {
                     (_, LowBinOp::BitOr) => self.fn_builder.ins().bor(lval, rval),
                     (_, LowBinOp::BitXor) => self.fn_builder.ins().bxor(lval, rval),
 
+                    (Type::Float(_), LowBinOp::Add) => self.fn_builder.ins().fadd(lval, rval),
+                    (Type::Float(_), LowBinOp::Sub) => self.fn_builder.ins().fsub(lval, rval),
+                    (Type::Float(_), LowBinOp::Mul) => self.fn_builder.ins().fmul(lval, rval),
+                    (Type::Float(_), LowBinOp::Div) => self.fn_builder.ins().fdiv(lval, rval),
+                    (Type::Float(_), LowBinOp::Rem) => {
+                        // why use 1 instruction when 4 do trick
+                        // x - (x / y).trunc() * y
+                        let t1 = self.fn_builder.ins().fdiv(lval, rval);
+                        let t2 = self.fn_builder.ins().trunc(t1);
+                        let t3 = self.fn_builder.ins().fmul(t2, rval);
+                        self.fn_builder.ins().fsub(lval, t3)
+                    }
                     _ if op.is_compare() => {
                         let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
@@ -430,15 +450,16 @@ impl<'a> JITFunc<'a> {
                                 lval,
                                 rval,
                             ),
-                            Type::Bool =>
+                            Type::Bool => {
                                 if op == LowBinOp::Eq {
-                                    let tmp = self.fn_builder.ins().bxor(lval,rval);
+                                    let tmp = self.fn_builder.ins().bxor(lval, rval);
                                     self.fn_builder.ins().bnot(tmp)
                                 } else if op == LowBinOp::Ne {
-                                    self.fn_builder.ins().bxor(lval,rval)
+                                    self.fn_builder.ins().bxor(lval, rval)
                                 } else {
-                                    panic!("bad primitive bool compare {:?}",op);
-                                },
+                                    panic!("bad primitive bool compare {:?}", op);
+                                }
+                            }
                             _ => panic!("can't compare {:?}", arg_ty),
                         }
                     }
@@ -456,7 +477,13 @@ impl<'a> JITFunc<'a> {
                 let arg = self.lower_expr(*arg).unwrap();
 
                 Some(match *op {
-                    UnOp::Neg(_) => self.fn_builder.ins().ineg(arg),
+                    UnOp::Neg(_) => {
+                        if ty.is_int() {
+                            self.fn_builder.ins().ineg(arg)
+                        } else {
+                            self.fn_builder.ins().fneg(arg)
+                        }
+                    }
                     UnOp::Not(_) => self.fn_builder.ins().bnot(arg),
                     _ => panic!("todo op {:?}", op),
                 })
@@ -470,6 +497,11 @@ impl<'a> JITFunc<'a> {
                     panic!("int too wide");
                 }
             }
+            Expr::LitFloat(x) => Some(match ty {
+                Type::Float(TypeFloat::F64) => self.fn_builder.ins().f64const(*x),
+                Type::Float(TypeFloat::F32) => self.fn_builder.ins().f32const(*x as f32),
+                _ => panic!(),
+            }),
             Expr::LitChar(x) => {
                 let x = *x as i64;
                 Some(self.fn_builder.ins().iconst(cty.unwrap(), x))

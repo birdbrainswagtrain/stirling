@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
-use crate::hir::types::{Signature, Type, TypeInt};
+use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
 use crate::jit::jit_compile;
 
 pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new(|| {
@@ -19,6 +19,13 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
         (
             _builtin::print_i32 as _,
             Signature::new(vec![Type::Int(TypeInt::I32)], Type::Void),
+        ),
+    );
+    m.insert(
+        "print_f64",
+        (
+            _builtin::print_f64 as _,
+            Signature::new(vec![Type::Float(TypeFloat::F64)], Type::Void),
         ),
     );
     m

@@ -50,16 +50,15 @@ fn bad() -> bool {
 
 fn main() {
 
-    //let x = 1.0;
-    //let y = 5.5;
+    let z = 1.0;
 
-    let x = (-1) as u128;
-    let y = x >> 48;
+    while true {
+        z += 0.1;
+        z %= 100.0;
+        //_skitter_builtin::print_f64(z);
+    }
 
-    let m = y - 60000;
-
-    _skitter_builtin::print_i32((m/5) as i32);
-
+    
     /*
     print_bool('a' == 'a');
     print_bool('a' == 'b');

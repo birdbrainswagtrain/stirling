@@ -76,17 +76,17 @@ fn pat_to_name(pat: &syn::Pat) -> String {
     } else if let syn::Pat::Type(pat_ty) = pat {
         pat_to_name(&pat_ty.pat)
     } else {
-        panic!("pattern to name {:?}",pat)
+        panic!("pattern to name {:?}", pat)
     }
 }
 
-fn pat_to_name_and_ty(pat: &syn::Pat, scope: &Scope) -> (String,Type) {
+fn pat_to_name_and_ty(pat: &syn::Pat, scope: &Scope) -> (String, Type) {
     if let syn::Pat::Type(pat_ty) = pat {
         let ty = Type::from_syn(&pat_ty.ty, scope);
         let name = pat_to_name(&pat_ty.pat);
-        (name,ty)
+        (name, ty)
     } else {
-        (pat_to_name(pat),Type::Unknown)
+        (pat_to_name(pat), Type::Unknown)
     }
 }
 
@@ -152,8 +152,7 @@ impl Block {
                     self.stmts.push(expr_id);
                 }
                 syn::Stmt::Local(syn_local) => {
-
-                    let (name,ty) = pat_to_name_and_ty(&syn_local.pat, &self.scope.borrow());
+                    let (name, ty) = pat_to_name_and_ty(&syn_local.pat, &self.scope.borrow());
 
                     let var_id = code.push_expr(Expr::Var(code.vars.len() as u32), ty);
                     code.vars.push(var_id);
@@ -228,6 +227,17 @@ impl Block {
                     };
                     assert!(ty.is_int());
                     code.push_expr(Expr::LitInt(n), ty)
+                }
+                syn::Lit::Float(float) => {
+                    let n: f64 = float.base10_parse().unwrap();
+                    let suffix = float.suffix();
+                    let ty = if suffix.len() != 0 {
+                        Type::from_str(suffix).unwrap()
+                    } else {
+                        Type::FloatUnknown
+                    };
+                    assert!(ty.is_float());
+                    code.push_expr(Expr::LitFloat(n), ty)
                 }
                 syn::Lit::Bool(syn::LitBool { value, .. }) => {
                     code.push_expr(Expr::LitBool(*value), Type::Bool)
@@ -307,6 +317,7 @@ pub enum Expr {
     UnOp(u32, syn::UnOp),
     UnOpPrimitive(u32, syn::UnOp),
     LitInt(u128),
+    LitFloat(f64),
     LitBool(bool),
     LitChar(char),
     Assign(u32, u32),

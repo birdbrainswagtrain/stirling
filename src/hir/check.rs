@@ -1,7 +1,7 @@
 use crate::builtin::BUILTINS;
 
 use super::func::{Expr, FuncHIR};
-use super::types::{Signature, Type, TypeInt};
+use super::types::{Signature, Type, TypeFloat, TypeInt};
 
 #[derive(Clone, Copy)]
 struct CheckResult {
@@ -54,6 +54,8 @@ impl FuncHIR {
             if ty.is_unknown() {
                 if ty == Type::IntUnknown {
                     self.exprs[i].ty = Type::Int(TypeInt::I32);
+                } else if ty == Type::FloatUnknown {
+                    self.exprs[i].ty = Type::Float(TypeFloat::F64);
                 } else {
                     panic!("function contains unknown type");
                 }
@@ -87,7 +89,12 @@ impl FuncHIR {
         let info = &self.exprs[index as usize];
 
         match info.expr {
-            Expr::Var(_) | Expr::LitInt(_) | Expr::LitChar(_) | Expr::LitBool(_) | Expr::CastPrimitive(_) => {
+            Expr::Var(_)
+            | Expr::LitInt(_)
+            | Expr::LitFloat(_)
+            | Expr::LitChar(_)
+            | Expr::LitBool(_)
+            | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {
                     mutated: false,
@@ -103,7 +110,8 @@ impl FuncHIR {
                 let is_primitive = match op_class(&op) {
                     OpClass::Arithmetic => lty.is_number() && rty.is_number(),
                     OpClass::Ord => {
-                        (lty.is_number() && rty.is_number()) || (lty == Type::Char && rty == Type::Char)
+                        (lty.is_number() && rty.is_number())
+                            || (lty == Type::Char && rty == Type::Char)
                     }
                     OpClass::Bitwise => {
                         (lty.is_int() && rty.is_int()) || (lty == Type::Bool && rty == Type::Bool)
@@ -117,7 +125,7 @@ impl FuncHIR {
                     self.exprs[index as usize].expr = Expr::BinOpPrimitive(lhs, op, rhs);
                     self.check_bin_op(index, lhs, op, rhs).set_mutated()
                 } else {
-                    panic!("todo more binary stuff {:?}",op);
+                    panic!("todo more binary stuff {:?}", op);
                 }
             }
 
@@ -247,7 +255,6 @@ impl FuncHIR {
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
-
         match op_class(&op) {
             OpClass::Arithmetic | OpClass::Bitwise => self.check_match_3(index, lhs, rhs),
             OpClass::Ord | OpClass::Eq => {
@@ -262,11 +269,14 @@ impl FuncHIR {
                 let m1 = self.update_expr_type(index, Type::Bool);
                 let m2 = self.update_expr_type(lhs, Type::Bool);
                 let m3 = self.update_expr_type(rhs, Type::Bool);
-                CheckResult{ mutated: m1 || m2 || m3, resolved: true }
+                CheckResult {
+                    mutated: m1 || m2 || m3,
+                    resolved: true,
+                }
             }
             OpClass::BitShift => {
                 // only lhs must match
-                self.check_match_2(index,lhs)
+                self.check_match_2(index, lhs)
             }
         }
     }
@@ -375,13 +385,9 @@ fn op_class(op: &syn::BinOp) -> OpClass {
         | BinOp::BitXor(_)
         | BinOp::BitXorEq(_) => OpClass::Bitwise,
 
-        BinOp::Shl(_)
-        | BinOp::ShlEq(_)
-        | BinOp::Shr(_)
-        | BinOp::ShrEq(_) => OpClass::BitShift,
+        BinOp::Shl(_) | BinOp::ShlEq(_) | BinOp::Shr(_) | BinOp::ShrEq(_) => OpClass::BitShift,
 
-        BinOp::Or(_)
-        | BinOp::And(_) => OpClass::Logical,
+        BinOp::Or(_) | BinOp::And(_) => OpClass::Logical,
 
         _ => panic!("todo op class {:?}", op),
     }

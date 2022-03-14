@@ -64,7 +64,7 @@ pub enum TypeInt {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TypeFloat {
     F64,
-    F32
+    F32,
 }
 
 impl Type {
@@ -183,9 +183,12 @@ impl Type {
             match (self, other) {
                 (Type::Unknown, _) => true,
                 (Type::IntUnknown, Type::Int(_)) => true,
+                (Type::FloatUnknown, Type::Float(_)) => true,
 
                 (_, Type::Unknown) => false,
                 (Type::Int(_), Type::IntUnknown) => false,
+                (Type::Float(_), Type::FloatUnknown) => false,
+
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
         }
