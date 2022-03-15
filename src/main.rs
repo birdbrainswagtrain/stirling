@@ -9,12 +9,14 @@ use crate::jit::jit_compile;
 use memoffset::offset_of;
 
 const PTR_WIDTH: usize = 8;
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 fn main() {
     check_abi();
 
-    let file_string = std::fs::read_to_string("test/add.rs").expect("failed to read source file");
+    let file_name = std::env::args().nth(1).expect("no file name provided");
+
+    let file_string = std::fs::read_to_string(&file_name).expect("failed to read source file");
 
     let syn_tree: syn::File = syn::parse_str(&file_string).expect("failed to parse source code");
 

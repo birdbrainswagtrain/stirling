@@ -21,9 +21,19 @@ use crate::hir::item::Function;
 use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
 use crate::PTR_WIDTH;
 
+enum CType{
+    Never,
+    Void,
+    Value(cranelift::prelude::Type),
+}
+
+enum CValInner {
+    Void,
+    Value(Value)
+}
+
 type CSignature = cranelift::prelude::Signature;
-type CType = Option<cranelift::prelude::Type>;
-type CVal = Option<Value>;
+type CVal = Result<CValInner,()>;
 
 fn ptr_ty() -> cranelift::prelude::Type {
     assert!(PTR_WIDTH == 8);

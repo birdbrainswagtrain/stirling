@@ -182,12 +182,16 @@ impl Type {
         } else {
             match (self, other) {
                 (Type::Unknown, _) => true,
-                (Type::IntUnknown, Type::Int(_)) => true,
-                (Type::FloatUnknown, Type::Float(_)) => true,
-
                 (_, Type::Unknown) => false,
+
+                (Type::IntUnknown, Type::Int(_)) => true,
                 (Type::Int(_), Type::IntUnknown) => false,
+                
+                (Type::FloatUnknown, Type::Float(_)) => true,
                 (Type::Float(_), Type::FloatUnknown) => false,
+
+                (Type::Never, x) if !x.is_unknown() => true,
+                (x, Type::Never) if !x.is_unknown() => false,
 
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }

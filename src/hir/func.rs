@@ -7,6 +7,7 @@ pub struct FuncHIR {
     pub root_expr: usize,
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
+    break_index: Vec<(u32,Option<String>)>
 }
 
 pub struct ExprInfo {
@@ -35,6 +36,7 @@ impl FuncHIR {
             root_expr: 0, // invalid, todo fill
             exprs: vec![],
             vars: vec![],
+            break_index: vec![]
         };
         let mut body = Block::new(Some(parent_scope));
         body.add_args(&mut code, &syn_fn.sig, ty_sig);
@@ -42,6 +44,10 @@ impl FuncHIR {
 
         let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
         code.root_expr = root as usize;
+
+        if code.break_index.len() > 0 {
+            panic!("bad break or continue detected");
+        }
 
         code.check();
 
@@ -52,6 +58,34 @@ impl FuncHIR {
         let id = self.exprs.len() as u32;
         self.exprs.push(ExprInfo::new(expr, ty));
         id
+    }
+
+    fn resolve_breaks(&mut self, loop_index: u32, target_label: &Option<syn::Label>) {
+        let target_label = target_label.as_ref().map(|t| t.name.ident.to_string());
+
+        self.break_index.retain(|(break_index,source_label)| {
+            let mut resolve = false;
+            if let Some(source_label) = source_label {
+                // has a target
+                if let Some(target_label) = &target_label {
+                    resolve = source_label == target_label;
+                }
+            } else {
+                // target is the innermost loop (this one)
+                resolve = true;
+            }
+
+            if resolve {
+                let expr = &mut self.exprs[*break_index as usize].expr;
+                match expr {
+                    Expr::Break(id,_) => *id = loop_index,
+                    Expr::Continue(id) => *id = loop_index,
+                    _ => panic!("can not resolve a break")
+                }
+            }
+
+            !resolve
+        });
     }
 
     pub fn print(&self) {
@@ -266,10 +300,19 @@ impl Block {
                     .map(|(_, else_branch)| self.add_expr(code, else_branch));
                 code.push_expr(Expr::If(id_cond, then_block, id_else), Type::Unknown)
             }
-            syn::Expr::While(syn::ExprWhile { cond, body, .. }) => {
+            syn::Expr::While(syn::ExprWhile { cond, body, label, .. }) => {
                 let id_cond = self.add_expr(code, cond);
                 let body_block = self.child_block_from_syn(code, body);
-                code.push_expr(Expr::While(id_cond, body_block), Type::Void)
+                let result = code.push_expr(Expr::While(id_cond, body_block), Type::Void);
+                code.resolve_breaks(result,label);
+                result
+            }
+            syn::Expr::Break(syn::ExprBreak{ label, expr, .. }) => {
+                let break_val = expr.as_ref().map(|expr| self.add_expr(code, &expr));
+                let label = label.as_ref().map(|l| l.ident.to_string());
+                let result = code.push_expr(Expr::Break(std::u32::MAX, break_val), Type::Never);
+                code.break_index.push((result,label));
+                result
             }
             syn::Expr::Call(syn::ExprCall { func, args, .. }) => {
                 let args: Vec<_> = args.iter().map(|arg| self.add_expr(code, arg)).collect();
@@ -326,4 +369,6 @@ pub enum Expr {
     While(u32, Box<Block>),
     Call(&'static Function, Vec<u32>),
     CallBuiltin(String, Vec<u32>),
+    Break(u32,Option<u32>),
+    Continue(u32)
 }

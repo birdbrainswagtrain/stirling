@@ -217,6 +217,13 @@ impl FuncHIR {
                     resolved: true,
                 }
             }
+            Expr::Break(target_loop,value) => {
+                assert!(value.is_none());
+                CheckResult {
+                    mutated: false,
+                    resolved: true
+                }
+            }
             Expr::CallBuiltin(ref name, ref args) => {
                 let sig = &BUILTINS.get(name.as_str()).unwrap().1;
                 let args = args.clone(); // TODO BAD CLONE

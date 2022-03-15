@@ -44,17 +44,17 @@ fn call_tiny() {
     _skitter_builtin::print_i32(sum)
 }
 
-fn bad() -> bool {
-    "it doesn't even support strings" >> lmao
-}
-
 fn main() {
 
-    let z = 1.0;
+    let mut z = 1.0;
 
-    while z <= 100.0 {
+    while true {
+        if z > 100.0 {
+            let b: i32 = break;
+            _skitter_builtin::print_i32(b);
+        }
         _skitter_builtin::print_f64(z);
-        z += 1.0;
+        z += 0.1;
     }
     
     /*
