@@ -48,7 +48,7 @@ fn main() {
 
     let mut z = 1.0;
 
-    while true {
+    while z < 1000.0 {
         if z > 100.0 {
             let b: i32 = break;
             _skitter_builtin::print_i32(b);

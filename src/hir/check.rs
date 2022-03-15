@@ -217,11 +217,11 @@ impl FuncHIR {
                     resolved: true,
                 }
             }
-            Expr::Break(target_loop,value) => {
+            Expr::Break(target_loop, value) => {
                 assert!(value.is_none());
                 CheckResult {
                     mutated: false,
-                    resolved: true
+                    resolved: true,
                 }
             }
             Expr::CallBuiltin(ref name, ref args) => {

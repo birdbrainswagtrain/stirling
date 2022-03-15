@@ -6,10 +6,10 @@ use std::time::Instant;
 
 use cranelift::codegen::Context;
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift::prelude::{MemFlags, FloatCC};
 use cranelift::prelude::{
     isa::CallConv, types, AbiParam, EntityRef, InstBuilder, IntCC, Value, Variable,
 };
+use cranelift::prelude::{FloatCC, MemFlags};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, FuncId, Linkage, Module};
 use syn::{BinOp, UnOp};
@@ -21,19 +21,39 @@ use crate::hir::item::Function;
 use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
 use crate::PTR_WIDTH;
 
-enum CType{
-    Never,
-    Void,
+enum CType {
+    Void, // synonymous with Never at this level
     Value(cranelift::prelude::Type),
 }
 
-enum CValInner {
+impl CType {
+    fn value(&self) -> cranelift::prelude::Type {
+        if let CType::Value(val) = self {
+            *val
+        } else {
+            panic!("failed to unwrap value from CType");
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CVal {
     Void,
-    Value(Value)
+    Value(Value),
+}
+
+impl CVal {
+    fn value(&self) -> Value {
+        if let CVal::Value(val) = self {
+            *val
+        } else {
+            panic!("failed to unwrap value from CVal");
+        }
+    }
 }
 
 type CSignature = cranelift::prelude::Signature;
-type CVal = Result<CValInner,()>;
+type CValOrNever = Result<CVal, ()>;
 
 fn ptr_ty() -> cranelift::prelude::Type {
     assert!(PTR_WIDTH == 8);
@@ -155,19 +175,19 @@ fn lower_type(ty: Type) -> CType {
         Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => {
             panic!("128 bit integers are broken")
         }
-        Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => Some(types::I64),
-        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => Some(types::I32),
-        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => Some(types::I16),
-        Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => Some(types::I8),
-        Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => Some(ptr_ty()),
+        Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => CType::Value(types::I64),
+        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => CType::Value(types::I32),
+        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => CType::Value(types::I16),
+        Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => CType::Value(types::I8),
+        Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => CType::Value(ptr_ty()),
 
         // Floats
-        Type::Float(TypeFloat::F64) => Some(types::F64),
-        Type::Float(TypeFloat::F32) => Some(types::F32),
+        Type::Float(TypeFloat::F64) => CType::Value(types::F64),
+        Type::Float(TypeFloat::F32) => CType::Value(types::F32),
 
-        Type::Bool => Some(types::B1),
-        Type::Char => Some(types::I32),
-        Type::Void => None,
+        Type::Bool => CType::Value(types::B1),
+        Type::Char => CType::Value(types::I32),
+        Type::Void => CType::Void,
         _ => panic!("unknown type"),
     }
 }
@@ -179,12 +199,12 @@ fn lower_sig(sig: &Signature) -> CSignature {
     let mut result = CSignature::new(call_conv);
 
     for ty in &sig.inputs {
-        if let Some(cty) = lower_type(*ty) {
+        if let CType::Value(cty) = lower_type(*ty) {
             result.params.push(AbiParam::new(cty));
         }
     }
 
-    if let Some(cty) = lower_type(sig.output) {
+    if let CType::Value(cty) = lower_type(sig.output) {
         result.returns.push(AbiParam::new(cty));
     }
 
@@ -258,7 +278,7 @@ impl LowBinOp {
 
             LowBinOp::Eq => FloatCC::Equal,
             LowBinOp::Ne => FloatCC::NotEqual,
-            _ => panic!("float cond code for {:?}", self)
+            _ => panic!("float cond code for {:?}", self),
         }
     }
 }
@@ -320,7 +340,7 @@ impl<'a> JITFunc<'a> {
         for index in self.input_fn.vars.iter() {
             let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[*index as usize];
             if let Expr::Var(var_id) = expr {
-                if let Some(cty) = lower_type(*ty) {
+                if let CType::Value(cty) = lower_type(*ty) {
                     let var = Variable::new(*var_id as usize);
                     self.fn_builder.declare_var(var, cty);
                 }
@@ -341,61 +361,61 @@ impl<'a> JITFunc<'a> {
         }
 
         let res = self.lower_expr(self.input_fn.root_expr as u32);
-        if let Some(res) = res {
+        if let Ok(CVal::Value(res)) = res {
             self.fn_builder.ins().return_(&[res]);
-        } else {
+        } else if let Ok(_) = res {
             self.fn_builder.ins().return_(&[]);
         }
 
         self.fn_builder.finalize();
     }
 
-    fn lower_expr(&mut self, expr_id: u32) -> CVal {
+    fn lower_expr(&mut self, expr_id: u32) -> CValOrNever {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
         let cty = lower_type(*ty);
-        match expr {
+        Ok(match expr {
             Expr::Var(var_id) => {
                 let var = Variable::new(*var_id as usize);
-                Some(self.fn_builder.use_var(var))
+                CVal::Value(self.fn_builder.use_var(var))
             }
             Expr::CastPrimitive(arg) => {
                 let src_ty = self.input_fn.exprs[*arg as usize].ty;
 
-                let arg = self.lower_expr(*arg).unwrap();
+                let arg = self.lower_expr(*arg)?.value();
 
                 if src_ty.is_int() && ty.is_int() {
                     let size_src = src_ty.byte_size();
                     let size_dest = ty.byte_size();
 
                     if size_src == size_dest {
-                        Some(arg)
+                        CVal::Value(arg)
                     } else if size_src < size_dest {
                         // widening: our type of extension is determined by the source type
                         if src_ty.is_signed() {
-                            Some(self.fn_builder.ins().sextend(cty.unwrap(), arg))
+                            CVal::Value(self.fn_builder.ins().sextend(cty.value(), arg))
                         } else {
-                            Some(self.fn_builder.ins().uextend(cty.unwrap(), arg))
+                            CVal::Value(self.fn_builder.ins().uextend(cty.value(), arg))
                         }
                     } else {
                         // narrowing
-                        Some(self.fn_builder.ins().ireduce(cty.unwrap(), arg))
+                        CVal::Value(self.fn_builder.ins().ireduce(cty.value(), arg))
                     }
                 } else {
                     panic!("non integer casts nyi");
                 }
             }
             Expr::Assign(dest, src) => {
-                let src_val = self.lower_expr(*src);
+                let src_val = self.lower_expr(*src)?;
                 self.lower_assign(*dest, src_val)
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => {
                 let (op, is_assign) = lower_bin_op(op);
 
                 if op == LowBinOp::LogicAnd || op == LowBinOp::LogicOr {
+                    let cond = self.lower_expr(*lhs)?.value();
+
                     let right_cb = self.fn_builder.create_block();
                     let final_cb = self.fn_builder.create_block();
-
-                    let cond = self.lower_expr(*lhs).unwrap();
 
                     if op == LowBinOp::LogicAnd {
                         self.fn_builder.ins().brnz(cond, right_cb, &[]);
@@ -407,21 +427,21 @@ impl<'a> JITFunc<'a> {
                     self.fn_builder.seal_block(right_cb);
                     self.fn_builder.switch_to_block(right_cb);
 
-                    let rval = self.lower_expr(*rhs).unwrap();
-
-                    self.fn_builder.ins().jump(final_cb, &[rval]);
+                    if let Ok(rval) = self.lower_expr(*rhs) {
+                        self.fn_builder.ins().jump(final_cb, &[rval.value()]);
+                    }
 
                     self.fn_builder.seal_block(final_cb);
                     self.fn_builder.switch_to_block(final_cb);
 
                     self.fn_builder.append_block_param(final_cb, types::B1);
-                    return Some(self.fn_builder.block_params(final_cb)[0]);
+                    return Ok(CVal::Value(self.fn_builder.block_params(final_cb)[0]));
                 }
 
-                let lval = self.lower_expr(*lhs).unwrap();
-                let rval = self.lower_expr(*rhs).unwrap();
+                let lval = self.lower_expr(*lhs)?.value();
+                let rval = self.lower_expr(*rhs)?.value();
 
-                let res_val = Some(match (ty, op) {
+                let res_val = CVal::Value(match (ty, op) {
                     (Type::Int(_), LowBinOp::Add) => self.fn_builder.ins().iadd(lval, rval),
                     (Type::Int(_), LowBinOp::Sub) => self.fn_builder.ins().isub(lval, rval),
                     (Type::Int(_), LowBinOp::Mul) => self.fn_builder.ins().imul(lval, rval),
@@ -473,11 +493,9 @@ impl<'a> JITFunc<'a> {
                                 lval,
                                 rval,
                             ),
-                            Type::Float(_) => self.fn_builder.ins().fcmp(
-                                op.float_cond_code(),
-                                lval,
-                                rval,
-                            ),
+                            Type::Float(_) => {
+                                self.fn_builder.ins().fcmp(op.float_cond_code(), lval, rval)
+                            }
                             Type::Bool => {
                                 if op == LowBinOp::Eq {
                                     let tmp = self.fn_builder.ins().bxor(lval, rval);
@@ -487,7 +505,7 @@ impl<'a> JITFunc<'a> {
                                 } else {
                                     panic!("bad primitive bool compare {:?}", op);
                                 }
-                            },
+                            }
                             _ => panic!("can't compare {:?}", arg_ty),
                         }
                     }
@@ -502,9 +520,9 @@ impl<'a> JITFunc<'a> {
                 res_val
             }
             Expr::UnOpPrimitive(arg, op) => {
-                let arg = self.lower_expr(*arg).unwrap();
+                let arg = self.lower_expr(*arg)?.value();
 
-                Some(match *op {
+                CVal::Value(match *op {
                     UnOp::Neg(_) => {
                         if ty.is_int() {
                             self.fn_builder.ins().ineg(arg)
@@ -520,28 +538,28 @@ impl<'a> JITFunc<'a> {
                 // TODO we assume the int is register-sized
                 let x: Result<i64, _> = (*x).try_into();
                 if let Ok(n) = x {
-                    Some(self.fn_builder.ins().iconst(cty.unwrap(), n))
+                    CVal::Value(self.fn_builder.ins().iconst(cty.value(), n))
                 } else {
                     panic!("int too wide");
                 }
             }
-            Expr::LitFloat(x) => Some(match ty {
+            Expr::LitFloat(x) => CVal::Value(match ty {
                 Type::Float(TypeFloat::F64) => self.fn_builder.ins().f64const(*x),
                 Type::Float(TypeFloat::F32) => self.fn_builder.ins().f32const(*x as f32),
                 _ => panic!(),
             }),
             Expr::LitChar(x) => {
                 let x = *x as i64;
-                Some(self.fn_builder.ins().iconst(cty.unwrap(), x))
+                CVal::Value(self.fn_builder.ins().iconst(cty.value(), x))
             }
-            Expr::LitBool(x) => Some(self.fn_builder.ins().bconst(cty.unwrap(), *x)),
-            Expr::Block(block) => self.lower_block(block),
+            Expr::LitBool(x) => CVal::Value(self.fn_builder.ins().bconst(cty.value(), *x)),
+            Expr::Block(block) => return self.lower_block(block),
             // if-then's without an else
             Expr::If(cond, then_block, None) => {
+                let cond = self.lower_expr(*cond)?.value();
+
                 let then_cb = self.fn_builder.create_block();
                 let final_cb = self.fn_builder.create_block();
-
-                let cond = self.lower_expr(*cond).unwrap();
 
                 self.fn_builder.ins().brnz(cond, then_cb, &[]);
                 self.fn_builder.ins().jump(final_cb, &[]);
@@ -549,21 +567,22 @@ impl<'a> JITFunc<'a> {
                 self.fn_builder.seal_block(then_cb);
                 self.fn_builder.switch_to_block(then_cb);
 
-                self.lower_block(then_block);
-                self.fn_builder.ins().jump(final_cb, &[]);
+                if let Ok(_) = self.lower_block(then_block) {
+                    self.fn_builder.ins().jump(final_cb, &[]);
+                }
 
                 self.fn_builder.seal_block(final_cb);
                 self.fn_builder.switch_to_block(final_cb);
 
-                None
+                CVal::Void
             }
             // if-then-else which can yield values
             Expr::If(cond, then_block, Some(else_expr)) => {
+                let cond = self.lower_expr(*cond)?.value();
+
                 let then_cb = self.fn_builder.create_block();
                 let else_cb = self.fn_builder.create_block();
                 let final_cb = self.fn_builder.create_block();
-
-                let cond = self.lower_expr(*cond).unwrap();
 
                 self.fn_builder.ins().brnz(cond, then_cb, &[]);
                 self.fn_builder.ins().jump(else_cb, &[]);
@@ -574,45 +593,61 @@ impl<'a> JITFunc<'a> {
                 // then branch
                 self.fn_builder.switch_to_block(then_cb);
 
-                if let Some(then_res) = self.lower_block(then_block) {
-                    self.fn_builder.ins().jump(final_cb, &[then_res]);
-                } else {
-                    self.fn_builder.ins().jump(final_cb, &[]);
+                let then_res = self.lower_block(then_block);
+                match then_res {
+                    Ok(CVal::Value(v)) => {
+                        self.fn_builder.ins().jump(final_cb, &[v]);
+                    }
+                    Ok(CVal::Void) => {
+                        self.fn_builder.ins().jump(final_cb, &[]);
+                    }
+                    Err(_) => (),
                 }
 
                 // else branch
                 self.fn_builder.switch_to_block(else_cb);
 
-                if let Some(else_res) = self.lower_expr(*else_expr) {
-                    self.fn_builder.ins().jump(final_cb, &[else_res]);
-                } else {
-                    self.fn_builder.ins().jump(final_cb, &[]);
+                let else_res = self.lower_expr(*else_expr);
+                match else_res {
+                    Ok(CVal::Value(v)) => {
+                        self.fn_builder.ins().jump(final_cb, &[v]);
+                    }
+                    Ok(CVal::Void) => {
+                        self.fn_builder.ins().jump(final_cb, &[]);
+                    }
+                    Err(_) => (),
+                }
+
+                // if both branches are never, we are also never
+                if then_res.is_err() && else_res.is_err() {
+                    return Err(());
                 }
 
                 // final, unified block
                 self.fn_builder.switch_to_block(final_cb);
                 self.fn_builder.seal_block(final_cb);
 
-                let res = if let Some(cty) = cty {
+                let res = if let CType::Value(cty) = cty {
                     self.fn_builder.append_block_param(final_cb, cty);
-                    Some(self.fn_builder.block_params(final_cb)[0])
+                    CVal::Value(self.fn_builder.block_params(final_cb)[0])
                 } else {
-                    None
+                    CVal::Void
                 };
 
                 res
             }
             Expr::While(cond, body_block) => {
                 let cond_cb = self.fn_builder.create_block();
-                let body_cb = self.fn_builder.create_block();
-                let final_cb = self.fn_builder.create_block();
 
                 self.fn_builder.ins().jump(cond_cb, &[]);
 
                 // cond block
                 self.fn_builder.switch_to_block(cond_cb);
 
-                let cond = self.lower_expr(*cond).unwrap();
+                let cond = self.lower_expr(*cond)?.value();
+
+                let body_cb = self.fn_builder.create_block();
+                let final_cb = self.fn_builder.create_block();
 
                 self.fn_builder.ins().brnz(cond, body_cb, &[]);
                 self.fn_builder.ins().jump(final_cb, &[]);
@@ -622,15 +657,16 @@ impl<'a> JITFunc<'a> {
 
                 // body block
                 self.fn_builder.switch_to_block(body_cb);
-                self.lower_block(body_block);
-                self.fn_builder.ins().jump(cond_cb, &[]);
+                if let Ok(_) = self.lower_block(body_block) {
+                    self.fn_builder.ins().jump(cond_cb, &[]);
+                }
 
                 self.fn_builder.seal_block(cond_cb);
 
                 // switch to final block
                 self.fn_builder.switch_to_block(final_cb);
 
-                None
+                CVal::Void
             }
             Expr::CallBuiltin(name, args) => {
                 let fn_id = self
@@ -643,7 +679,7 @@ impl<'a> JITFunc<'a> {
 
                 let mut c_args = Vec::new();
                 for arg in args {
-                    if let Some(val) = self.lower_expr(*arg) {
+                    if let CVal::Value(val) = self.lower_expr(*arg)? {
                         c_args.push(val);
                     }
                 }
@@ -652,9 +688,9 @@ impl<'a> JITFunc<'a> {
 
                 let call_res = self.fn_builder.inst_results(call_inst);
                 if call_res.len() > 0 {
-                    Some(call_res[0])
+                    CVal::Value(call_res[0])
                 } else {
-                    None
+                    CVal::Void
                 }
             }
             Expr::Call(func, args) => {
@@ -701,7 +737,7 @@ impl<'a> JITFunc<'a> {
 
                 let mut c_args = Vec::new();
                 for arg in args {
-                    if let Some(val) = self.lower_expr(*arg) {
+                    if let CVal::Value(val) = self.lower_expr(*arg)? {
                         c_args.push(val);
                     }
                 }
@@ -710,29 +746,29 @@ impl<'a> JITFunc<'a> {
 
                 let call_res = self.fn_builder.inst_results(call_inst);
                 if call_res.len() > 0 {
-                    Some(call_res[0])
+                    CVal::Value(call_res[0])
                 } else {
-                    None
+                    CVal::Void
                 }
             }
             _ => panic!("todo lower expr {:?}", expr),
-        }
+        })
     }
 
-    fn lower_block(&mut self, block: &Block) -> CVal {
+    fn lower_block(&mut self, block: &Block) -> CValOrNever {
         for expr_id in &block.stmts {
-            self.lower_expr(*expr_id);
+            self.lower_expr(*expr_id)?;
         }
 
         if let Some(expr_id) = &block.result {
             self.lower_expr(*expr_id)
         } else {
-            None
+            Ok(CVal::Void)
         }
     }
 
     fn lower_assign(&mut self, dest_id: u32, src: CVal) -> CVal {
-        if let Some(src) = src {
+        if let CVal::Value(src) = src {
             let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[dest_id as usize];
             let cty = lower_type(*ty);
             match expr {

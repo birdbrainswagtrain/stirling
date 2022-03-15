@@ -135,9 +135,12 @@ impl Type {
 
     pub fn is_prim_eq(&self) -> bool {
         match self {
-            Type::IntUnknown | Type::Int(_) |
-            Type::FloatUnknown | Type::Float(_) |
-            Type::Bool | Type::Char => true,
+            Type::IntUnknown
+            | Type::Int(_)
+            | Type::FloatUnknown
+            | Type::Float(_)
+            | Type::Bool
+            | Type::Char => true,
             _ => false,
         }
     }
@@ -186,7 +189,7 @@ impl Type {
 
                 (Type::IntUnknown, Type::Int(_)) => true,
                 (Type::Int(_), Type::IntUnknown) => false,
-                
+
                 (Type::FloatUnknown, Type::Float(_)) => true,
                 (Type::Float(_), Type::FloatUnknown) => false,
 
