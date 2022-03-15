@@ -54,14 +54,8 @@ fn main() {
             _skitter_builtin::print_i32(b);
         }
         _skitter_builtin::print_f64(z);
+        continue;
         z += 0.1;
     }
-    
-    /*
-    print_bool('a' == 'a');
-    print_bool('a' == 'b');
-    _skitter_builtin::print_i32(11111);
-    print_bool('A' > 'a');
-    print_bool('A' == 'a');
-    print_bool('A' < 'a');*/
+    _skitter_builtin::print_i32(123);
 }

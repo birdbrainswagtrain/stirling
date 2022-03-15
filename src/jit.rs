@@ -144,6 +144,7 @@ impl JIT {
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
                 module: &self.module,
                 builtins: &self.builtins,
+                active_loops: vec!()
             };
 
             jit_func.compile();
@@ -188,7 +189,10 @@ fn lower_type(ty: Type) -> CType {
         Type::Bool => CType::Value(types::B1),
         Type::Char => CType::Value(types::I32),
         Type::Void => CType::Void,
-        _ => panic!("unknown type"),
+
+        Type::Never => CType::Void,
+
+        _ => panic!("unknown type {:?}",ty),
     }
 }
 
@@ -326,11 +330,18 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
     }
 }
 
+struct LoopBlocks{
+    loop_id: u32,
+    b_break: cranelift::prelude::Block,
+    b_continue: cranelift::prelude::Block
+}
+
 struct JITFunc<'a> {
     input_fn: &'a FuncHIR,
     fn_builder: FunctionBuilder<'a>,
     module: &'a JITModule,
     builtins: &'a HashMap<String, FuncId>,
+    active_loops: Vec<LoopBlocks>
 }
 
 impl<'a> JITFunc<'a> {
@@ -653,20 +664,42 @@ impl<'a> JITFunc<'a> {
                 self.fn_builder.ins().jump(final_cb, &[]);
 
                 self.fn_builder.seal_block(body_cb);
-                self.fn_builder.seal_block(final_cb);
-
+                
                 // body block
+                self.active_loops.push(LoopBlocks{loop_id: expr_id, b_break: final_cb, b_continue: cond_cb});
                 self.fn_builder.switch_to_block(body_cb);
                 if let Ok(_) = self.lower_block(body_block) {
                     self.fn_builder.ins().jump(cond_cb, &[]);
                 }
-
+                {
+                    let popped_loop_info = self.active_loops.pop().unwrap();
+                    assert_eq!(popped_loop_info.loop_id,expr_id);
+                }
+                
+                // must be sealed after any potential breaks or continues
                 self.fn_builder.seal_block(cond_cb);
+                self.fn_builder.seal_block(final_cb);
 
                 // switch to final block
                 self.fn_builder.switch_to_block(final_cb);
 
                 CVal::Void
+            }
+            Expr::Break(loop_id, val) => {
+                if val.is_some() {
+                    panic!("todo break value");
+                }
+
+                let loop_info = self.active_loops.iter().find(|x| x.loop_id == *loop_id).unwrap();
+                self.fn_builder.ins().jump(loop_info.b_break, &[]);
+
+                return Err(());
+            }
+            Expr::Continue(loop_id) => {
+                let loop_info = self.active_loops.iter().find(|x| x.loop_id == *loop_id).unwrap();
+                self.fn_builder.ins().jump(loop_info.b_continue, &[]);
+
+                return Err(());
             }
             Expr::CallBuiltin(name, args) => {
                 let fn_id = self

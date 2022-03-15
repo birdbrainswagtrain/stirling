@@ -316,6 +316,12 @@ impl Block {
                 code.break_index.push((result, label));
                 result
             }
+            syn::Expr::Continue(syn::ExprContinue{label,..}) => {
+                let label = label.as_ref().map(|l| l.ident.to_string());
+                let result = code.push_expr(Expr::Continue(std::u32::MAX), Type::Never);
+                code.break_index.push((result, label));
+                result
+            },
             syn::Expr::Call(syn::ExprCall { func, args, .. }) => {
                 let args: Vec<_> = args.iter().map(|arg| self.add_expr(code, arg)).collect();
 

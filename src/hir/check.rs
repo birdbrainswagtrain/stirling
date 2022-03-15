@@ -217,8 +217,14 @@ impl FuncHIR {
                     resolved: true,
                 }
             }
-            Expr::Break(target_loop, value) => {
+            Expr::Break(_target_loop, value) => {
                 assert!(value.is_none());
+                CheckResult {
+                    mutated: false,
+                    resolved: true,
+                }
+            }
+            Expr::Continue(_target_loop) => {
                 CheckResult {
                     mutated: false,
                     resolved: true,

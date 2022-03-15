@@ -13,7 +13,8 @@
 ### Control Flow
 - blocks, can yield values
 - if-then and if-else, can yield values
-- while loops (no break or continue)
+- while loops
+- break and continue for supported loop kinds
 - simple function calls (no method invocation or generics)
 
 ### Not Yet Implemented
