@@ -77,6 +77,8 @@ impl Type {
                     }
                 }
             }
+            syn::Type::Never(_) => return Type::Never,
+
             _ => (),
         }
         panic!("failed to convert type {:?}", syn_ty)

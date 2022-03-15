@@ -9,7 +9,7 @@ use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift::prelude::{
     isa::CallConv, types, AbiParam, EntityRef, InstBuilder, IntCC, Value, Variable,
 };
-use cranelift::prelude::{FloatCC, MemFlags};
+use cranelift::prelude::{FloatCC, MemFlags, TrapCode};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, FuncId, Linkage, Module};
 use syn::{BinOp, UnOp};
@@ -22,7 +22,8 @@ use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
 use crate::PTR_WIDTH;
 
 enum CType {
-    Void, // synonymous with Never at this level
+    Void,
+    Never,
     Value(cranelift::prelude::Type),
 }
 
@@ -149,6 +150,9 @@ impl JIT {
 
             jit_func.compile();
         }
+        if crate::VERBOSE {
+            println!("IR ===============>\n{}",self.ctx.func);
+        }
 
         let compiled_fn = self
             .module
@@ -158,6 +162,7 @@ impl JIT {
 
         self.module.clear_context(&mut self.ctx);
         self.module.finalize_definitions();
+
 
         let code = self.module.get_finalized_function(fn_id);
 
@@ -189,8 +194,7 @@ fn lower_type(ty: Type) -> CType {
         Type::Bool => CType::Value(types::B1),
         Type::Char => CType::Value(types::I32),
         Type::Void => CType::Void,
-
-        Type::Never => CType::Void,
+        Type::Never => CType::Never,
 
         _ => panic!("unknown type {:?}",ty),
     }
@@ -730,7 +734,9 @@ impl<'a> JITFunc<'a> {
                 let jit_cb = self.fn_builder.create_block();
                 let next_cb = self.fn_builder.create_block();
 
-                let c_sig = lower_sig(func.sig());
+                let sig = func.sig();
+                let c_sig = lower_sig(sig);
+                //let returns_never = c_sig.returns
                 let sig_id = self.fn_builder.import_signature(c_sig);
 
                 let data_ptr = *func as *const Function;
@@ -776,6 +782,11 @@ impl<'a> JITFunc<'a> {
                 }
 
                 let call_inst = self.fn_builder.ins().call_indirect(sig_id, fn_val, &c_args);
+
+                if sig.output == Type::Never {
+                    self.fn_builder.ins().trap(TrapCode::UnreachableCodeReached);
+                    return Err(());
+                }
 
                 let call_res = self.fn_builder.inst_results(call_inst);
                 if call_res.len() > 0 {

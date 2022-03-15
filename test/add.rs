@@ -44,17 +44,22 @@ fn call_tiny() {
     _skitter_builtin::print_i32(sum)
 }
 
+fn never() -> ! {
+    panic!("butt")
+}
+
 fn main() {
 
     let mut z = 1.0;
 
     while z < 1000.0 {
         if z > 100.0 {
-            let b: i32 = break;
-            _skitter_builtin::print_i32(b);
+            _skitter_builtin::print_i32(never());
+            //let b: i8 = never() + 100;
+            //let c = 100 + b;
+            //_skitter_builtin::print_i32(c as i32);
         }
         _skitter_builtin::print_f64(z);
-        continue;
         z += 0.1;
     }
     _skitter_builtin::print_i32(123);
