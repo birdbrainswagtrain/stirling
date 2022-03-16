@@ -195,8 +195,10 @@ impl Type {
                 (Type::FloatUnknown, Type::Float(_)) => true,
                 (Type::Float(_), Type::FloatUnknown) => false,
 
-                (Type::Never, x) if !x.is_unknown() => true,
-                (x, Type::Never) if !x.is_unknown() => false,
+                // we do not want to downgrade never to unknown
+                // however, upgrading it to IntUnknown or FloatUnknown is fine
+                (Type::Never, x) if x != Type::Unknown => true,
+                (x, Type::Never) if x != Type::Unknown => false,
 
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }

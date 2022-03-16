@@ -50,17 +50,26 @@ fn never() -> ! {
 
 fn main() {
 
-    let mut z = 1.0;
+    /*let mut z = 1.0;
 
-    while z < 1000.0 {
-        if z > 100.0 {
-            _skitter_builtin::print_i32(never());
-            //let b: i8 = never() + 100;
-            //let c = 100 + b;
-            //_skitter_builtin::print_i32(c as i32);
+    let res = 'a: loop {
+        if z > 3.0 {
+            break 'a 6023;
         }
         _skitter_builtin::print_f64(z);
         z += 0.1;
-    }
-    _skitter_builtin::print_i32(123);
+    };
+    _skitter_builtin::print_i32(res);*/
+
+    let mut i = 0;
+    let res = loop {
+        i += 1;
+        if i > 100 {
+            break 1234;
+        }
+        //_skitter_builtin::print_i32(5);
+    };
+
+    _skitter_builtin::print_i32(10);
+    _skitter_builtin::print_i32(res);
 }

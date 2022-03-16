@@ -181,7 +181,6 @@ impl FuncHIR {
                     }
                 } else {
                     // if-then
-                    println!("YO");
                     let m1 = if let Some(then_expr) = then_expr {
                         self.update_expr_type(then_expr, Type::Void)
                     } else {
@@ -217,12 +216,42 @@ impl FuncHIR {
                     resolved: true,
                 }
             }
-            Expr::Break(_target_loop, value) => {
-                assert!(value.is_none());
+            Expr::Loop(ref body_block) => {
+                let body_expr = body_block.result;
+
+                let mutated = if let Some(body_expr) = body_expr {
+                    self.update_expr_type(body_expr, Type::Void)
+                } else {
+                    false
+                };
+
                 CheckResult {
-                    mutated: false,
+                    mutated,
                     resolved: true,
                 }
+            }
+            Expr::Break(target_loop, value) => {
+                let loop_expr = &self.exprs[target_loop as usize].expr;
+
+                if let Expr::Loop(_) = loop_expr {
+                    // loop loops require type checking
+                    if let Some(value) = value {
+                        self.check_match_2(target_loop, value)
+                    } else {
+                        let mutated = self.update_expr_type(target_loop, Type::Void);
+                        CheckResult {
+                            mutated,
+                            resolved: true,
+                        }
+                    }
+                } else {                    
+                    assert!(value.is_none());
+                    CheckResult {
+                        mutated: false,
+                        resolved: true,
+                    }
+                }
+
             }
             Expr::Continue(_target_loop) => {
                 CheckResult {

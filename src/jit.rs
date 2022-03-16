@@ -689,13 +689,54 @@ impl<'a> JITFunc<'a> {
 
                 CVal::Void
             }
-            Expr::Break(loop_id, val) => {
-                if val.is_some() {
-                    panic!("todo break value");
+            Expr::Loop(body_block) => {
+                let body_cb = self.fn_builder.create_block();
+                let final_cb = self.fn_builder.create_block();
+                self.fn_builder.ins().jump(body_cb, &[]);
+
+                // body block
+                self.active_loops.push(LoopBlocks{loop_id: expr_id, b_break: final_cb, b_continue: body_cb});
+                self.fn_builder.switch_to_block(body_cb);
+                if let Ok(_) = self.lower_block(body_block) {
+                    self.fn_builder.ins().jump(body_cb, &[]);
+                }
+                {
+                    let popped_loop_info = self.active_loops.pop().unwrap();
+                    assert_eq!(popped_loop_info.loop_id,expr_id);
                 }
 
+                // must be sealed after any potential breaks or continues
+                self.fn_builder.seal_block(body_cb);
+                self.fn_builder.seal_block(final_cb);
+
+                // switch to final block
+                self.fn_builder.switch_to_block(final_cb);
+
+                let res = if let CType::Value(cty) = cty {
+                    self.fn_builder.append_block_param(final_cb, cty);
+                    CVal::Value(self.fn_builder.block_params(final_cb)[0])
+                } else {
+                    CVal::Void
+                };
+
+                res
+            }
+            Expr::Break(loop_id, val) => {
+                let val = if let Some(val) = val {
+                    self.lower_expr(*val)?
+                } else {
+                    CVal::Void
+                };
+
                 let loop_info = self.active_loops.iter().find(|x| x.loop_id == *loop_id).unwrap();
-                self.fn_builder.ins().jump(loop_info.b_break, &[]);
+                match val {
+                    CVal::Value(val) => {
+                        self.fn_builder.ins().jump(loop_info.b_break, &[val]);
+                    }
+                    CVal::Void => {
+                        self.fn_builder.ins().jump(loop_info.b_break, &[]);
+                    }
+                }
 
                 return Err(());
             }
@@ -812,16 +853,19 @@ impl<'a> JITFunc<'a> {
     }
 
     fn lower_assign(&mut self, dest_id: u32, src: CVal) -> CVal {
-        if let CVal::Value(src) = src {
-            let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[dest_id as usize];
-            let cty = lower_type(*ty);
-            match expr {
-                Expr::Var(var_id) => {
-                    let var = Variable::new(*var_id as usize);
-                    self.fn_builder.def_var(var, src);
+        match src {
+            CVal::Value(src) => {
+                let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[dest_id as usize];
+                let cty = lower_type(*ty);
+                match expr {
+                    Expr::Var(var_id) => {
+                        let var = Variable::new(*var_id as usize);
+                        self.fn_builder.def_var(var, src);
+                    }
+                    _ => panic!("todo lower assignment {:?}", expr),
                 }
-                _ => panic!("todo lower assignment {:?}", expr),
-            }
+            },
+            CVal::Void => ()
         }
         src
     }

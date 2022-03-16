@@ -309,6 +309,12 @@ impl Block {
                 code.resolve_breaks(result, label);
                 result
             }
+            syn::Expr::Loop(syn::ExprLoop{body,label,..}) => {
+                let body_block = self.child_block_from_syn(code, body);
+                let result = code.push_expr(Expr::Loop(body_block), Type::Never);
+                code.resolve_breaks(result, label);
+                result
+            }
             syn::Expr::Break(syn::ExprBreak { label, expr, .. }) => {
                 let break_val = expr.as_ref().map(|expr| self.add_expr(code, &expr));
                 let label = label.as_ref().map(|l| l.ident.to_string());
@@ -375,6 +381,7 @@ pub enum Expr {
     CastPrimitive(u32),
     If(u32, Box<Block>, Option<u32>),
     While(u32, Box<Block>),
+    Loop(Box<Block>),
     Call(&'static Function, Vec<u32>),
     CallBuiltin(String, Vec<u32>),
     Break(u32, Option<u32>),

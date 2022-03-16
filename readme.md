@@ -12,9 +12,10 @@
 
 ### Control Flow
 - blocks, can yield values
-- if-then and if-else, can yield values
-- while loops
-- break and continue for supported loop kinds
+- `if` expressions, can yield values
+- `while` loops
+- `loop` loops, can yield values with `break`
+- `break` and `continue` for supported loop kinds, supports labels
 - simple function calls (no method invocation or generics)
 
 ### Not Yet Implemented
