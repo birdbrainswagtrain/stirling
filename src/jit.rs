@@ -67,7 +67,9 @@ pub extern "C" fn jit_compile(func: &Function) -> *const u8 {
         let mut jit = rc.borrow_mut();
         jit.compile(func)
     });
-    println!("JIT: {} {:?}", func.debug_name, start.elapsed());
+    if crate::LOG_JITS {
+        println!("JIT: {} {:?}", func.debug_name, start.elapsed());
+    }
 
     match result {
         Ok(ptr) => {

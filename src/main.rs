@@ -9,7 +9,8 @@ use crate::jit::jit_compile;
 use memoffset::offset_of;
 
 const PTR_WIDTH: usize = 8;
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
+const LOG_JITS: bool = true;
 
 fn main() {
     check_abi();

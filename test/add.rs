@@ -61,7 +61,7 @@ fn main() {
     };
     _skitter_builtin::print_i32(res);*/
 
-    let mut i = 0;
+    /*let mut i = 0;
     let res = loop {
         i += 1;
         if i > 100 {
@@ -71,5 +71,12 @@ fn main() {
     };
 
     _skitter_builtin::print_i32(10);
-    _skitter_builtin::print_i32(res);
+    _skitter_builtin::print_i32(res);*/
+
+    let mut i = 1;
+    let x: i32 = loop {
+        i += 1;
+    };
+
+    _skitter_builtin::print_i32(x);
 }
