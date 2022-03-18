@@ -9,7 +9,7 @@ use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift::prelude::{
     isa::CallConv, types, AbiParam, EntityRef, InstBuilder, IntCC, Value, Variable,
 };
-use cranelift::prelude::{FloatCC, MemFlags, TrapCode};
+use cranelift::prelude::{FloatCC, MemFlags, TrapCode, StackSlotData, StackSlotKind};
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{DataContext, FuncId, Linkage, Module};
 use syn::{BinOp, UnOp};
@@ -18,8 +18,9 @@ use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
 use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
-use crate::hir::types::{Signature, Type, TypeFloat, TypeInt};
+use crate::hir::types::{Signature, Type, FloatType, IntType, ComplexType};
 use crate::PTR_WIDTH;
+use crate::hir::var_storage::{get_var_storage, VarKind, VarStorage};
 
 enum CType {
     Void,
@@ -133,6 +134,9 @@ impl JIT {
     fn compile(&mut self, func: &Function) -> Result<*const u8, String> {
         let sig = func.sig();
         let ir = func.hir();
+
+        let var_kinds = get_var_storage(ir);
+
         self.ctx.func.signature = lower_sig(sig);
 
         let fn_name = format!("skitter_{}", func as *const Function as usize);
@@ -147,10 +151,11 @@ impl JIT {
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
                 module: &self.module,
                 builtins: &self.builtins,
+                var_storage: vec!(),
                 active_loops: vec!()
             };
 
-            jit_func.compile();
+            jit_func.compile(var_kinds);
         }
         if crate::VERBOSE {
             println!("IR ===============>\n{}",self.ctx.func);
@@ -180,18 +185,21 @@ impl JIT {
 fn lower_type(ty: Type) -> CType {
     match ty {
         // Ints
-        Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => {
+        Type::Int(IntType::I128) | Type::Int(IntType::U128) => {
             panic!("128 bit integers are broken")
         }
-        Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => CType::Value(types::I64),
-        Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => CType::Value(types::I32),
-        Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => CType::Value(types::I16),
-        Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => CType::Value(types::I8),
-        Type::Int(TypeInt::ISize) | Type::Int(TypeInt::USize) => CType::Value(ptr_ty()),
+        Type::Int(IntType::I64) | Type::Int(IntType::U64) => CType::Value(types::I64),
+        Type::Int(IntType::I32) | Type::Int(IntType::U32) => CType::Value(types::I32),
+        Type::Int(IntType::I16) | Type::Int(IntType::U16) => CType::Value(types::I16),
+        Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Value(types::I8),
+        Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Value(ptr_ty()),
+
+        // Refs
+        Type::Complex(ComplexType::Ref(..)) => CType::Value(ptr_ty()),
 
         // Floats
-        Type::Float(TypeFloat::F64) => CType::Value(types::F64),
-        Type::Float(TypeFloat::F32) => CType::Value(types::F32),
+        Type::Float(FloatType::F64) => CType::Value(types::F64),
+        Type::Float(FloatType::F32) => CType::Value(types::F32),
 
         Type::Bool => CType::Value(types::B1),
         Type::Char => CType::Value(types::I32),
@@ -347,24 +355,42 @@ struct JITFunc<'a> {
     fn_builder: FunctionBuilder<'a>,
     module: &'a JITModule,
     builtins: &'a HashMap<String, FuncId>,
-    active_loops: Vec<LoopBlocks>
+    var_storage: Vec<VarStorage>,
+    active_loops: Vec<LoopBlocks>,
 }
 
 impl<'a> JITFunc<'a> {
-    pub fn compile(&mut self) {
+    pub fn compile(&mut self, var_kinds: Vec<VarKind>) {
         let entry_block = self.fn_builder.create_block();
 
-        for index in self.input_fn.vars.iter() {
-            let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[*index as usize];
-            if let Expr::Var(var_id) = expr {
-                if let CType::Value(cty) = lower_type(*ty) {
-                    let var = Variable::new(*var_id as usize);
-                    self.fn_builder.declare_var(var, cty);
+        let mut next_var_id = 0;
+
+        self.var_storage = self.input_fn.vars.iter().zip(var_kinds).map(|(expr_index,storage)| {
+            let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[*expr_index as usize];
+            if let Expr::Var(_) = expr {
+                match storage {
+                    VarKind::Register => {
+                        if let CType::Value(cty) = lower_type(*ty) {
+                            let var = Variable::new(next_var_id);
+                            next_var_id += 1;
+                            self.fn_builder.declare_var(var, cty);
+                            VarStorage::Register( var )
+                        } else {
+                            panic!("attempt to alloc register for {:?}",ty);
+                        }
+                    },
+                    VarKind::StackSlot => {
+                        let size = ty.byte_size();
+                        let slot = self.fn_builder.create_stack_slot( StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32) );
+                        VarStorage::StackSlot(slot)
+                    },
+                    VarKind::StackPointer => panic!("init stack pointer") // ssa value
                 }
             } else {
                 panic!("can not create var from {:?}", expr);
             }
-        }
+        }).collect();
+
 
         self.fn_builder
             .append_block_params_for_function_params(entry_block);
@@ -392,8 +418,10 @@ impl<'a> JITFunc<'a> {
         let cty = lower_type(*ty);
         Ok(match expr {
             Expr::Var(var_id) => {
-                let var = Variable::new(*var_id as usize);
-                CVal::Value(self.fn_builder.use_var(var))
+                match &self.var_storage[*var_id as usize] {
+                    VarStorage::Register(reg) => CVal::Value(self.fn_builder.use_var(*reg)),
+                    vs => panic!("uses var {:?}",vs)
+                }
             }
             Expr::CastPrimitive(arg) => {
                 let src_ty = self.input_fn.exprs[*arg as usize].ty;
@@ -561,8 +589,8 @@ impl<'a> JITFunc<'a> {
                 }
             }
             Expr::LitFloat(x) => CVal::Value(match ty {
-                Type::Float(TypeFloat::F64) => self.fn_builder.ins().f64const(*x),
-                Type::Float(TypeFloat::F32) => self.fn_builder.ins().f32const(*x as f32),
+                Type::Float(FloatType::F64) => self.fn_builder.ins().f64const(*x),
+                Type::Float(FloatType::F32) => self.fn_builder.ins().f32const(*x as f32),
                 _ => panic!(),
             }),
             Expr::LitChar(x) => {
@@ -570,7 +598,10 @@ impl<'a> JITFunc<'a> {
                 CVal::Value(self.fn_builder.ins().iconst(cty.value(), x))
             }
             Expr::LitBool(x) => CVal::Value(self.fn_builder.ins().bconst(cty.value(), *x)),
-            Expr::Block(block) => return self.lower_block(block),
+            Expr::Ref(x, _is_mut) => {
+                self.get_addr(*x)?
+            },
+            Expr::Block(block) => self.lower_block(block)?,
             // if-then's without an else
             Expr::If(cond, then_block, None) => {
                 let cond = self.lower_expr(*cond)?.value();
@@ -861,8 +892,15 @@ impl<'a> JITFunc<'a> {
                 let cty = lower_type(*ty);
                 match expr {
                     Expr::Var(var_id) => {
-                        let var = Variable::new(*var_id as usize);
-                        self.fn_builder.def_var(var, src);
+                        match &self.var_storage[*var_id as usize] {
+                            VarStorage::Register(reg) => {
+                                self.fn_builder.def_var(*reg, src);
+                            }
+                            VarStorage::StackSlot(slot) => {
+                                self.fn_builder.ins().stack_store(src,*slot,0);
+                            }
+                            vs => panic!("assign var {:?}",vs)
+                        }
                     }
                     _ => panic!("todo lower assignment {:?}", expr),
                 }
@@ -870,5 +908,35 @@ impl<'a> JITFunc<'a> {
             CVal::Void => ()
         }
         src
+    }
+
+    fn get_addr(&mut self, expr_id: u32) -> CValOrNever {
+        let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
+        Ok(match expr {
+            Expr::Var(var_id) => {
+                match &self.var_storage[*var_id as usize] {
+                    VarStorage::Register(_) => panic!("attempt to get address of register"),
+                    VarStorage::StackSlot(slot) => {
+                        CVal::Value( self.fn_builder.ins().stack_addr(ptr_ty(), *slot, 0) )
+                    }
+                    _ => panic!("stop")
+                }
+            },
+            Expr::LitInt(_) => {
+
+                let src = self.lower_expr(expr_id)?;
+
+                if let CVal::Value(src) = src {
+                    let size = ty.byte_size();
+                    let slot = self.fn_builder.create_stack_slot( StackSlotData::new(StackSlotKind::ExplicitSlot, size as u32) );
+    
+                    self.fn_builder.ins().stack_store(src,slot,0);
+                    CVal::Value( self.fn_builder.ins().stack_addr(ptr_ty(), slot, 0) )
+                } else {
+                    panic!("can't get address of non-scalar")
+                }
+            },
+            _ => panic!("get addr: {:?}",expr)
+        })
     }
 }

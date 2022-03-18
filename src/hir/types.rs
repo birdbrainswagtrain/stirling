@@ -1,6 +1,16 @@
+use once_cell::sync::Lazy;
+
+use std::{collections::HashSet, sync::RwLock};
+
 use super::item::{try_path_to_name, Scope};
 
-pub struct TypeRegistry {}
+struct TypeRegistry {
+    lookup: HashSet<&'static ComplexType>
+}
+
+static TYPE_REGISTRY: Lazy<RwLock<TypeRegistry>> = Lazy::new(|| {
+    RwLock::new(TypeRegistry{lookup: HashSet::new()})
+});
 
 #[derive(Debug)]
 pub struct Signature {
@@ -31,21 +41,27 @@ impl Signature {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug)]
+pub enum ComplexType{
+    Ref(Type,bool)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Type {
     Unknown,
     IntUnknown,
-    Int(TypeInt),
+    Int(IntType),
     FloatUnknown,
-    Float(TypeFloat),
+    Float(FloatType),
     Bool,
     Char,
     Void,
     Never,
+    Complex(&'static ComplexType)
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum TypeInt {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum IntType {
     ISize,
     I128,
     I64,
@@ -61,8 +77,8 @@ pub enum TypeInt {
     U8,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum TypeFloat {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum FloatType {
     F64,
     F32,
 }
@@ -77,6 +93,11 @@ impl Type {
                     }
                 }
             }
+            syn::Type::Reference(tr) => {
+                let is_mut = tr.mutability.is_some();
+                let inner = Type::from_syn(&tr.elem, scope);
+                return Type::from_agg(ComplexType::Ref(inner, is_mut));
+            }
             syn::Type::Never(_) => return Type::Never,
 
             _ => (),
@@ -86,19 +107,19 @@ impl Type {
 
     pub fn from_str(name: &str) -> Option<Type> {
         match name {
-            "isize" => Some(Type::Int(TypeInt::ISize)),
-            "i128" => Some(Type::Int(TypeInt::I128)),
-            "i64" => Some(Type::Int(TypeInt::I64)),
-            "i32" => Some(Type::Int(TypeInt::I32)),
-            "i16" => Some(Type::Int(TypeInt::I16)),
-            "i8" => Some(Type::Int(TypeInt::I8)),
+            "isize" => Some(Type::Int(IntType::ISize)),
+            "i128" => Some(Type::Int(IntType::I128)),
+            "i64" => Some(Type::Int(IntType::I64)),
+            "i32" => Some(Type::Int(IntType::I32)),
+            "i16" => Some(Type::Int(IntType::I16)),
+            "i8" => Some(Type::Int(IntType::I8)),
 
-            "usize" => Some(Type::Int(TypeInt::USize)),
-            "u128" => Some(Type::Int(TypeInt::U128)),
-            "u64" => Some(Type::Int(TypeInt::U64)),
-            "u32" => Some(Type::Int(TypeInt::U32)),
-            "u16" => Some(Type::Int(TypeInt::U16)),
-            "u8" => Some(Type::Int(TypeInt::U8)),
+            "usize" => Some(Type::Int(IntType::USize)),
+            "u128" => Some(Type::Int(IntType::U128)),
+            "u64" => Some(Type::Int(IntType::U64)),
+            "u32" => Some(Type::Int(IntType::U32)),
+            "u16" => Some(Type::Int(IntType::U16)),
+            "u8" => Some(Type::Int(IntType::U8)),
 
             "bool" => Some(Type::Bool),
             "char" => Some(Type::Char),
@@ -110,6 +131,11 @@ impl Type {
     pub fn is_unknown(&self) -> bool {
         match self {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
+            Type::Complex(cpx) => {
+                match cpx {
+                    ComplexType::Ref(t, _) => t.is_unknown()
+                }
+            }
             _ => false,
         }
     }
@@ -150,18 +176,18 @@ impl Type {
     pub fn is_signed(&self) -> bool {
         if let Type::Int(ti) = self {
             match ti {
-                TypeInt::ISize
-                | TypeInt::I128
-                | TypeInt::I64
-                | TypeInt::I32
-                | TypeInt::I16
-                | TypeInt::I8 => true,
-                TypeInt::USize
-                | TypeInt::U128
-                | TypeInt::U64
-                | TypeInt::U32
-                | TypeInt::U16
-                | TypeInt::U8 => false,
+                IntType::ISize
+                | IntType::I128
+                | IntType::I64
+                | IntType::I32
+                | IntType::I16
+                | IntType::I8 => true,
+                IntType::USize
+                | IntType::U128
+                | IntType::U64
+                | IntType::U32
+                | IntType::U16
+                | IntType::U8 => false,
             }
         } else if *self == Type::Char {
             false
@@ -172,11 +198,11 @@ impl Type {
 
     pub fn byte_size(&self) -> usize {
         match self {
-            Type::Int(TypeInt::I128) | Type::Int(TypeInt::U128) => 16,
-            Type::Int(TypeInt::I64) | Type::Int(TypeInt::U64) => 8,
-            Type::Int(TypeInt::I32) | Type::Int(TypeInt::U32) => 4,
-            Type::Int(TypeInt::I16) | Type::Int(TypeInt::U16) => 2,
-            Type::Int(TypeInt::I8) | Type::Int(TypeInt::U8) => 1,
+            Type::Int(IntType::I128) | Type::Int(IntType::U128) => 16,
+            Type::Int(IntType::I64) | Type::Int(IntType::U64) => 8,
+            Type::Int(IntType::I32) | Type::Int(IntType::U32) => 4,
+            Type::Int(IntType::I16) | Type::Int(IntType::U16) => 2,
+            Type::Int(IntType::I8) | Type::Int(IntType::U8) => 1,
             _ => panic!("cannot size {:?}", self),
         }
     }
@@ -200,8 +226,36 @@ impl Type {
                 (Type::Never, x) if x != Type::Unknown => true,
                 (x, Type::Never) if x != Type::Unknown => false,
 
+                (
+                    Type::Complex(ComplexType::Ref(t1,m1)),
+                    Type::Complex(ComplexType::Ref(t2,m2))
+                ) => {
+                    assert_eq!(m1,m2);
+                    t1.can_upgrade_to(*t2)
+                }
+
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
+        }
+    }
+
+    pub fn from_agg(t: ComplexType) -> Type {
+        let mut registry = TYPE_REGISTRY.write().unwrap();
+        if let Some(res) = registry.lookup.get(&t) {
+            Type::Complex(res)
+        } else {
+            let res = Box::leak(Box::new(t));
+            registry.lookup.insert(res);
+            Type::Complex(res)
+        }
+    }
+
+    // get target type of ref -- REF ONLY
+    pub fn try_get_ref(self) -> Option<(Type,bool)> {
+        if let Type::Complex(ComplexType::Ref(ty, is_mut)) = self {
+            Some((*ty,*is_mut))
+        } else {
+            None
         }
     }
 }

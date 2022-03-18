@@ -223,6 +223,11 @@ impl Block {
                 let id_arg = self.add_expr(code, expr);
                 code.push_expr(Expr::UnOp(id_arg, *op), Type::Unknown)
             }
+            syn::Expr::Reference(syn::ExprReference{ expr, mutability, .. }) => {
+                let id_arg = self.add_expr(code, expr);
+                let is_mut = mutability.is_some();
+                code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
+            },
             syn::Expr::Assign(syn::ExprAssign { left, right, .. }) => {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
@@ -373,6 +378,7 @@ pub enum Expr {
     BinOpPrimitive(u32, syn::BinOp, u32),
     UnOp(u32, syn::UnOp),
     UnOpPrimitive(u32, syn::UnOp),
+    Ref(u32, bool), // 2nd value indicates mutability
     LitInt(u128),
     LitFloat(f64),
     LitBool(bool),
