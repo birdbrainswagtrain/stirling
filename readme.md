@@ -9,6 +9,7 @@
 - Bools: Literals, logic, bitwise (IE non-lazy logic), equality. **(TODO as casts)**
 - Floats: Literals, arithmetic, comparisons.
 - Chars: Literals, comparisons.
+- References: Scalar types can be reference and dereferenced.
 
 ### Control Flow
 - blocks, can yield values
@@ -24,4 +25,4 @@
 - Anything related to namespaces / modules / name resolution is probably severely busted.
 
 ### Not Supported
-- The `mut` keyword is ignored. All values and references are assumed to be mutable.
+- The `mut` keyword is ignored. All values are assumed to be mutable. References track mutability but only for the sake of the type system.

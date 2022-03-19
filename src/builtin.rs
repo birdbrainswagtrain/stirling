@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
-use crate::hir::types::{Signature, Type, FloatType, IntType};
+use crate::hir::types::{FloatType, IntType, Signature, Type};
 use crate::jit::jit_compile;
 
 pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new(|| {

@@ -1,7 +1,7 @@
 use crate::builtin::BUILTINS;
 
 use super::func::{Expr, FuncHIR};
-use super::types::{Signature, Type, FloatType, IntType, ComplexType};
+use super::types::{ComplexType, FloatType, IntType, Signature, Type};
 
 #[derive(Clone, Copy)]
 struct CheckResult {
@@ -57,7 +57,7 @@ impl FuncHIR {
                 } else if ty == Type::FloatUnknown {
                     self.exprs[i].ty = Type::Float(FloatType::F64);
                 } else {
-                    panic!("function contains unknown type");
+                    panic!("function contains unknown type {:?}",ty);
                 }
             }
         }
@@ -105,8 +105,8 @@ impl FuncHIR {
                 // NOTE: coercions might require AsRef
                 let arg_ty = self.exprs[arg as usize].ty;
                 //let ref_ty = self.exprs[index as usize].ty.ref_target();
-                if let Some((ref_ty,ref_mut)) = self.exprs[index as usize].ty.try_get_ref() {
-                    assert_eq!(is_mut,ref_mut);
+                if let Some((ref_ty, ref_mut)) = self.exprs[index as usize].ty.try_get_ref() {
+                    assert_eq!(is_mut, ref_mut);
                     if arg_ty == ref_ty {
                         return CheckResult {
                             mutated: false,
@@ -123,7 +123,7 @@ impl FuncHIR {
                         };
                     }
                 }
-                
+
                 // Otherwise, upgrade self to arg
                 self.exprs[index as usize].ty = Type::from_agg(ComplexType::Ref(arg_ty, is_mut));
 
@@ -134,7 +134,26 @@ impl FuncHIR {
                     mutated: true,
                     resolved: r1 && r2,
                 }
-            },
+            }
+            Expr::DeRef(arg) => {
+                let arg_ty = self.exprs[arg as usize].ty;
+                let mut mutated = false;
+                if let Some((ref_ty, ref_mut)) = arg_ty.try_get_ref() {
+                    if info.ty.can_upgrade_to(ref_ty) {
+                        self.exprs[index as usize].ty = ref_ty;
+                    } else {
+                        self.exprs[arg as usize].ty = Type::from_agg(ComplexType::Ref(info.ty, ref_mut))
+                    }
+                    mutated = true;
+                }
+                let r1 = !self.exprs[index as usize].ty.is_unknown();
+                let r2 = !self.exprs[arg as usize].ty.is_unknown();
+
+                CheckResult {
+                    mutated,
+                    resolved: r1 && r2,
+                }
+            }
             Expr::Assign(dst, src) => self.check_match_3(index, dst, src),
             Expr::BinOpPrimitive(lhs, op, rhs) => self.check_bin_op(index, lhs, op, rhs),
             Expr::BinOp(lhs, op, rhs) => {
@@ -278,21 +297,18 @@ impl FuncHIR {
                             resolved: true,
                         }
                     }
-                } else {                    
+                } else {
                     assert!(value.is_none());
                     CheckResult {
                         mutated: false,
                         resolved: true,
                     }
                 }
-
             }
-            Expr::Continue(_target_loop) => {
-                CheckResult {
-                    mutated: false,
-                    resolved: true,
-                }
-            }
+            Expr::Continue(_target_loop) => CheckResult {
+                mutated: false,
+                resolved: true,
+            },
             Expr::CallBuiltin(ref name, ref args) => {
                 let sig = &BUILTINS.get(name.as_str()).unwrap().1;
                 let args = args.clone(); // TODO BAD CLONE

@@ -5,11 +5,13 @@ use std::{collections::HashSet, sync::RwLock};
 use super::item::{try_path_to_name, Scope};
 
 struct TypeRegistry {
-    lookup: HashSet<&'static ComplexType>
+    lookup: HashSet<&'static ComplexType>,
 }
 
 static TYPE_REGISTRY: Lazy<RwLock<TypeRegistry>> = Lazy::new(|| {
-    RwLock::new(TypeRegistry{lookup: HashSet::new()})
+    RwLock::new(TypeRegistry {
+        lookup: HashSet::new(),
+    })
 });
 
 #[derive(Debug)]
@@ -42,8 +44,8 @@ impl Signature {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
-pub enum ComplexType{
-    Ref(Type,bool)
+pub enum ComplexType {
+    Ref(Type, bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -57,7 +59,7 @@ pub enum Type {
     Char,
     Void,
     Never,
-    Complex(&'static ComplexType)
+    Complex(&'static ComplexType),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -131,11 +133,9 @@ impl Type {
     pub fn is_unknown(&self) -> bool {
         match self {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
-            Type::Complex(cpx) => {
-                match cpx {
-                    ComplexType::Ref(t, _) => t.is_unknown()
-                }
-            }
+            Type::Complex(cpx) => match cpx {
+                ComplexType::Ref(t, _) => t.is_unknown(),
+            },
             _ => false,
         }
     }
@@ -227,10 +227,10 @@ impl Type {
                 (x, Type::Never) if x != Type::Unknown => false,
 
                 (
-                    Type::Complex(ComplexType::Ref(t1,m1)),
-                    Type::Complex(ComplexType::Ref(t2,m2))
+                    Type::Complex(ComplexType::Ref(t1, m1)),
+                    Type::Complex(ComplexType::Ref(t2, m2)),
                 ) => {
-                    assert_eq!(m1,m2);
+                    assert_eq!(m1, m2);
                     t1.can_upgrade_to(*t2)
                 }
 
@@ -251,9 +251,9 @@ impl Type {
     }
 
     // get target type of ref -- REF ONLY
-    pub fn try_get_ref(self) -> Option<(Type,bool)> {
+    pub fn try_get_ref(self) -> Option<(Type, bool)> {
         if let Type::Complex(ComplexType::Ref(ty, is_mut)) = self {
-            Some((*ty,*is_mut))
+            Some((*ty, *is_mut))
         } else {
             None
         }

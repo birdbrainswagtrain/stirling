@@ -221,13 +221,19 @@ impl Block {
             }
             syn::Expr::Unary(syn::ExprUnary { expr, op, .. }) => {
                 let id_arg = self.add_expr(code, expr);
-                code.push_expr(Expr::UnOp(id_arg, *op), Type::Unknown)
+                if let syn::UnOp::Deref(_) = op {
+                    code.push_expr(Expr::DeRef(id_arg), Type::Unknown)
+                } else {
+                    code.push_expr(Expr::UnOp(id_arg, *op), Type::Unknown)
+                }
             }
-            syn::Expr::Reference(syn::ExprReference{ expr, mutability, .. }) => {
+            syn::Expr::Reference(syn::ExprReference {
+                expr, mutability, ..
+            }) => {
                 let id_arg = self.add_expr(code, expr);
                 let is_mut = mutability.is_some();
                 code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
-            },
+            }
             syn::Expr::Assign(syn::ExprAssign { left, right, .. }) => {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
@@ -314,7 +320,7 @@ impl Block {
                 code.resolve_breaks(result, label);
                 result
             }
-            syn::Expr::Loop(syn::ExprLoop{body,label,..}) => {
+            syn::Expr::Loop(syn::ExprLoop { body, label, .. }) => {
                 let body_block = self.child_block_from_syn(code, body);
                 let result = code.push_expr(Expr::Loop(body_block), Type::Never);
                 code.resolve_breaks(result, label);
@@ -327,12 +333,12 @@ impl Block {
                 code.break_index.push((result, label));
                 result
             }
-            syn::Expr::Continue(syn::ExprContinue{label,..}) => {
+            syn::Expr::Continue(syn::ExprContinue { label, .. }) => {
                 let label = label.as_ref().map(|l| l.ident.to_string());
                 let result = code.push_expr(Expr::Continue(std::u32::MAX), Type::Never);
                 code.break_index.push((result, label));
                 result
-            },
+            }
             syn::Expr::Call(syn::ExprCall { func, args, .. }) => {
                 let args: Vec<_> = args.iter().map(|arg| self.add_expr(code, arg)).collect();
 
@@ -379,6 +385,7 @@ pub enum Expr {
     UnOp(u32, syn::UnOp),
     UnOpPrimitive(u32, syn::UnOp),
     Ref(u32, bool), // 2nd value indicates mutability
+    DeRef(u32),
     LitInt(u128),
     LitFloat(f64),
     LitBool(bool),
