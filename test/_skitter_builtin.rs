@@ -6,6 +6,10 @@ pub extern "C" fn print_f64(x: f64) {
     println!("{}",x);
 }
 
+pub extern "C" fn print_char(x: char) {
+    println!("{}",x);
+}
+
 pub extern "C" fn print_header(x: i64) {
     println!("> {}",x);
 }

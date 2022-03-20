@@ -454,7 +454,7 @@ impl<'a> JITFunc<'a> {
 
                 let arg = self.lower_expr(*arg)?.unwrap_scalar();
 
-                if src_ty.is_int() && ty.is_int() {
+                if (src_ty.is_int() || src_ty == Type::Char) && ty.is_int() {
                     let size_src = src_ty.byte_size();
                     let size_dest = ty.byte_size();
 
@@ -471,6 +471,8 @@ impl<'a> JITFunc<'a> {
                         // narrowing
                         CVal::Scalar(self.fn_builder.ins().ireduce(cty.unwrap_scalar(), arg))
                     }
+                } else if src_ty == Type::Int(IntType::U8) && *ty == Type::Char {
+                    CVal::Scalar(self.fn_builder.ins().uextend(types::I32, arg))
                 } else {
                     panic!("non integer casts nyi");
                 }

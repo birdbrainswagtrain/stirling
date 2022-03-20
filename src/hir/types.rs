@@ -210,6 +210,8 @@ impl Type {
             Type::Float(FloatType::F64) => 8,
             Type::Float(FloatType::F32) => 4,
 
+            Type::Char => 4,
+
             _ => panic!("cannot size {:?}", self),
         }
     }

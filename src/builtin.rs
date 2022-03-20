@@ -35,6 +35,13 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
             Signature::new(vec![Type::Float(FloatType::F64)], Type::Void),
         ),
     );
+    m.insert(
+        "print_char",
+        (
+            _builtin::print_char as _,
+            Signature::new(vec![Type::Char], Type::Void),
+        ),
+    );
     m
 });
 

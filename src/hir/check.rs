@@ -315,7 +315,12 @@ impl FuncHIR {
                 resolved: true,
             },
             Expr::CallBuiltin(ref name, ref args) => {
-                let sig = &BUILTINS.get(name.as_str()).unwrap().1;
+                let entry = BUILTINS.get(name.as_str());
+                if entry.is_none() {
+                    panic!("invalid builtin: {}",name);
+                }
+
+                let sig = &entry.unwrap().1;
                 let args = args.clone(); // TODO BAD CLONE
 
                 self.check_function(index, &args, sig)

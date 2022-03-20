@@ -40,6 +40,7 @@ fn storage_for_type(ty: Type) -> VarStorage {
     match ty {
         Type::Int(_) => VarStorage::Register,
         Type::Float(_) => VarStorage::Register,
+        Type::Char => VarStorage::Register,
 
         Type::Void => VarStorage::None,
 
