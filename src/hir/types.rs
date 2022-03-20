@@ -123,6 +123,9 @@ impl Type {
             "u16" => Some(Type::Int(IntType::U16)),
             "u8" => Some(Type::Int(IntType::U8)),
 
+            "f64" => Some(Type::Float(FloatType::F64)),
+            "f32" => Some(Type::Float(FloatType::F32)),
+
             "bool" => Some(Type::Bool),
             "char" => Some(Type::Char),
 
@@ -203,6 +206,10 @@ impl Type {
             Type::Int(IntType::I32) | Type::Int(IntType::U32) => 4,
             Type::Int(IntType::I16) | Type::Int(IntType::U16) => 2,
             Type::Int(IntType::I8) | Type::Int(IntType::U8) => 1,
+
+            Type::Float(FloatType::F64) => 8,
+            Type::Float(FloatType::F32) => 4,
+
             _ => panic!("cannot size {:?}", self),
         }
     }

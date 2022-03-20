@@ -1,29 +1,26 @@
 mod _skitter_builtin;
 
-fn print_int_ref(x: &i32) {
-    _skitter_builtin::print_i64(*x as i64);
+fn print_float_ref(x: &f64) {
+    _skitter_builtin::print_f64(*x);
 }
 
-fn edit_int_ref(x: &mut i32) {
-    *x = 100;
+fn edit_float_ref(x: &mut f64) {
+    *x += 10.0;
 }
 
 fn main() {
-    let x = 10;
+    let x = 5.0;
     let y = &x;
-    print_int_ref(&x);
-    print_int_ref(y);
-    print_int_ref(&20);
+    print_float_ref(&x);
+    print_float_ref(y);
+    print_float_ref(&25.0);
 
     {
-        let mut m = 0;
-        edit_int_ref(&mut m);
-        print_int_ref(&m);
-    }
-
-    {
-        let mut m = 0;
-        edit_int_ref(&mut * &mut m);
-        print_int_ref(& * & m);
+        let mut m = 0.0;
+        edit_float_ref(&mut m);
+        print_float_ref(&m);
+        
+        edit_float_ref(&mut * &mut m);
+        print_float_ref(& * & m);
     }
 }

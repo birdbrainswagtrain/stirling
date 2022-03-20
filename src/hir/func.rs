@@ -1,3 +1,5 @@
+use crate::profiler::profile;
+
 use super::item::{Function, Item, ItemName, Scope};
 use super::types::{Signature, Type};
 
@@ -38,18 +40,20 @@ impl FuncHIR {
             vars: vec![],
             break_index: vec![],
         };
-        let mut body = Block::new(Some(parent_scope));
-        body.add_args(&mut code, &syn_fn.sig, ty_sig);
-        body.add_from_syn(&mut code, &syn_fn.block);
-
-        let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
-        code.root_expr = root as usize;
+        profile("lower AST -> HIR",||{
+            let mut body = Block::new(Some(parent_scope));
+            body.add_args(&mut code, &syn_fn.sig, ty_sig);
+            body.add_from_syn(&mut code, &syn_fn.block);
+    
+            let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
+            code.root_expr = root as usize;
+        });
 
         if code.break_index.len() > 0 {
             panic!("bad break or continue detected");
         }
 
-        code.check();
+        profile("type check",|| code.check());
 
         code
     }

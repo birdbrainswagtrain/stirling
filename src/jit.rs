@@ -23,6 +23,7 @@ use crate::hir::item::Function;
 use crate::hir::types::{ComplexType, FloatType, IntType, Signature, Type};
 use crate::hir::var_storage::{get_var_storage, VarStorage};
 use crate::PTR_WIDTH;
+use crate::profiler::profile;
 
 #[derive(Debug)]
 enum CType {
@@ -158,7 +159,7 @@ impl JIT {
             .declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
-        {
+        profile("lower HIR -> CLIF",|| {
             let mut jit_func = JITFunc {
                 input_fn: ir,
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
@@ -169,15 +170,18 @@ impl JIT {
             };
 
             jit_func.compile(var_kinds);
-        }
+        });
         if crate::VERBOSE {
-            println!("IR ===============>\n{}", self.ctx.func);
+            println!("CLIF IR ===============>\n{}", self.ctx.func);
         }
 
-        let compiled_fn = self
-            .module
-            .define_function(fn_id, &mut self.ctx)
-            .map_err(|e| e.to_string())?;
+        let compiled_fn = profile("codegen",|| {
+            self
+                .module
+                .define_function(fn_id, &mut self.ctx)
+                .map_err(|e| e.to_string())
+        })?;
+        
         let size = compiled_fn.size as usize;
 
         self.module.clear_context(&mut self.ctx);
@@ -350,9 +354,7 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
         BinOp::ShrEq(_) => (LowBinOp::BitShiftRight, true),
 
         BinOp::And(_) => (LowBinOp::LogicAnd, false),
-        BinOp::Or(_) => (LowBinOp::LogicOr, false),
-
-        _ => panic!("can't lower op {:?}", op),
+        BinOp::Or(_) => (LowBinOp::LogicOr, false)
     }
 }
 
@@ -985,7 +987,8 @@ impl<'a> JITFunc<'a> {
                     panic!("attempt to deref {:?}", arg);
                 }
             }
-            Expr::LitInt(_) => {
+            // store temporaries on the stack to convert them to places
+            Expr::LitInt(_) | Expr::LitFloat(_) => {
                 let src = self.lower_expr(expr_id)?;
 
                 if let CVal::Scalar(src) = src {

@@ -1,4 +1,4 @@
-use super::{func::{Expr, FuncHIR}, types::Type};
+use super::{func::{Expr, FuncHIR}, types::{Type, ComplexType}};
 
 #[derive(PartialEq, Debug)]
 pub enum VarStorage {
@@ -39,7 +39,11 @@ fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<VarStorage>
 fn storage_for_type(ty: Type) -> VarStorage {
     match ty {
         Type::Int(_) => VarStorage::Register,
+        Type::Float(_) => VarStorage::Register,
+
         Type::Void => VarStorage::None,
+
+        Type::Complex(ComplexType::Ref(_, _)) => VarStorage::Register,
         _ => panic!("storage for {:?}",ty)
     }
 }
