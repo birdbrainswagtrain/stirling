@@ -197,7 +197,7 @@ impl Block {
 
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
-                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id), ty);
+                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Void);
                         self.stmts.push(assign_id);
                     }
                 }
@@ -238,7 +238,7 @@ impl Block {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
 
-                code.push_expr(Expr::Assign(id_l, id_r), Type::Unknown)
+                code.push_expr(Expr::Assign(id_l, id_r), Type::Void)
             }
             syn::Expr::Path(syn::ExprPath { path, .. }) => {
                 let name = ItemName::Value(path_to_name(path).expect("unsupported path expr"));
@@ -293,6 +293,13 @@ impl Block {
                 }
                 _ => panic!("todo handle lit {:?}", lit),
             },
+            syn::Expr::Tuple(syn::ExprTuple { elems, .. }) => {
+                if elems.len() == 0 {
+                    code.push_expr(Expr::LitVoid, Type::Void)
+                } else {
+                    panic!("todo actual tuples");
+                }
+            }
             // control flow-ish stuff
             syn::Expr::Block(syn::ExprBlock { block, .. }) => {
                 let hir_block = self.child_block_from_syn(code, block);
@@ -390,6 +397,7 @@ pub enum Expr {
     LitFloat(f64),
     LitBool(bool),
     LitChar(char),
+    LitVoid,
     Assign(u32, u32),
     CastPrimitive(u32),
     If(u32, Box<Block>, Option<u32>),

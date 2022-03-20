@@ -1,22 +1,21 @@
-
-use super::func::{Expr, FuncHIR};
+use super::{func::{Expr, FuncHIR}, types::Type};
 
 #[derive(PartialEq, Debug)]
 pub enum VarStorage {
     Register,
     Stack,
-    Pointer
+    Pointer,
+    None // ZST
 }
 
 pub fn get_var_storage(input_fn: &FuncHIR) -> Vec<VarStorage> {
-    let var_count = input_fn.vars.len();
-    let mut res = Vec::with_capacity(input_fn.exprs.len());
     // TODO non-trivial aggregate arguments use StackPointer
     // TODO non-trivial aggregate vars use StackSlot
 
-    for _ in 0..var_count {
-        res.push(VarStorage::Register);
-    }
+    let mut res = input_fn.vars.iter().map(|expr_id| {
+        let ty = input_fn.exprs[*expr_id as usize].ty;
+        storage_for_type(ty)
+    }).collect();
 
     // Referenced vars must be demoted to StackSlot
     for info in &input_fn.exprs {
@@ -34,5 +33,13 @@ fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<VarStorage>
         if res[*var_id as usize] == VarStorage::Register {
             res[*var_id as usize] = VarStorage::Stack;
         }
+    }
+}
+
+fn storage_for_type(ty: Type) -> VarStorage {
+    match ty {
+        Type::Int(_) => VarStorage::Register,
+        Type::Void => VarStorage::None,
+        _ => panic!("storage for {:?}",ty)
     }
 }

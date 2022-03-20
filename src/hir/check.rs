@@ -57,7 +57,7 @@ impl FuncHIR {
                 } else if ty == Type::FloatUnknown {
                     self.exprs[i].ty = Type::Float(FloatType::F64);
                 } else {
-                    panic!("function contains unknown type {:?}",ty);
+                    panic!("function contains unknown type {:?}", ty);
                 }
             }
         }
@@ -94,6 +94,7 @@ impl FuncHIR {
             | Expr::LitFloat(_)
             | Expr::LitChar(_)
             | Expr::LitBool(_)
+            | Expr::LitVoid
             | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {
@@ -142,7 +143,8 @@ impl FuncHIR {
                     if info.ty.can_upgrade_to(ref_ty) {
                         self.exprs[index as usize].ty = ref_ty;
                     } else {
-                        self.exprs[arg as usize].ty = Type::from_agg(ComplexType::Ref(info.ty, ref_mut))
+                        self.exprs[arg as usize].ty =
+                            Type::from_agg(ComplexType::Ref(info.ty, ref_mut))
                     }
                     mutated = true;
                 }
@@ -154,7 +156,10 @@ impl FuncHIR {
                     resolved: r1 && r2,
                 }
             }
-            Expr::Assign(dst, src) => self.check_match_3(index, dst, src),
+            Expr::Assign(dst, src) => {
+                assert_eq!(info.ty,Type::Void);
+                self.check_match_2(dst, src)
+            }
             Expr::BinOpPrimitive(lhs, op, rhs) => self.check_bin_op(index, lhs, op, rhs),
             Expr::BinOp(lhs, op, rhs) => {
                 let lty = self.exprs[lhs as usize].ty;
@@ -347,9 +352,28 @@ impl FuncHIR {
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
-        match op_class(&op) {
-            OpClass::Arithmetic | OpClass::Bitwise => self.check_match_3(index, lhs, rhs),
+        let is_assign = op_is_assign(&op);
+        let mut res = match op_class(&op) {
+            OpClass::Arithmetic | OpClass::Bitwise => {
+                if is_assign {
+                    self.check_match_2(lhs, rhs)
+                } else {
+                    self.check_match_3(index, lhs, rhs)
+                }
+            }
+            OpClass::BitShift => {
+                if is_assign {
+                    CheckResult {
+                        mutated: false,
+                        resolved: true,
+                    }
+                } else {
+                    // only lhs must match
+                    self.check_match_2(index, lhs)
+                }
+            }
             OpClass::Ord | OpClass::Eq => {
+                assert!(!is_assign);
                 let mutated = self.update_expr_type(index, Type::Bool);
                 let mut res = self.check_match_2(lhs, rhs);
                 if mutated {
@@ -358,6 +382,7 @@ impl FuncHIR {
                 res
             }
             OpClass::Logical => {
+                assert!(!is_assign);
                 let m1 = self.update_expr_type(index, Type::Bool);
                 let m2 = self.update_expr_type(lhs, Type::Bool);
                 let m3 = self.update_expr_type(rhs, Type::Bool);
@@ -366,11 +391,15 @@ impl FuncHIR {
                     resolved: true,
                 }
             }
-            OpClass::BitShift => {
-                // only lhs must match
-                self.check_match_2(index, lhs)
+        };
+
+        if is_assign {
+            if self.update_expr_type(index, Type::Void) {
+                res.set_mutated();
             }
         }
+
+        res
     }
 
     fn check_match_2_internal(&mut self, arg1: u32, arg2: u32) -> bool {
@@ -480,7 +509,40 @@ fn op_class(op: &syn::BinOp) -> OpClass {
         BinOp::Shl(_) | BinOp::ShlEq(_) | BinOp::Shr(_) | BinOp::ShrEq(_) => OpClass::BitShift,
 
         BinOp::Or(_) | BinOp::And(_) => OpClass::Logical,
+    }
+}
 
-        _ => panic!("todo op class {:?}", op),
+fn op_is_assign(op: &syn::BinOp) -> bool {
+    use syn::BinOp;
+    match op {
+        BinOp::AddEq(_)
+        | BinOp::SubEq(_)
+        | BinOp::MulEq(_)
+        | BinOp::DivEq(_)
+        | BinOp::RemEq(_)
+        | BinOp::BitAndEq(_)
+        | BinOp::BitOrEq(_)
+        | BinOp::BitXorEq(_)
+        | BinOp::ShlEq(_)
+        | BinOp::ShrEq(_) => true,
+
+        BinOp::Add(_)
+        | BinOp::Sub(_)
+        | BinOp::Mul(_)
+        | BinOp::Div(_)
+        | BinOp::Rem(_)
+        | BinOp::BitAnd(_)
+        | BinOp::BitOr(_)
+        | BinOp::BitXor(_)
+        | BinOp::Shl(_)
+        | BinOp::Shr(_)
+        | BinOp::Lt(_)
+        | BinOp::Gt(_)
+        | BinOp::Le(_)
+        | BinOp::Ge(_)
+        | BinOp::Eq(_)
+        | BinOp::Ne(_)
+        | BinOp::Or(_)
+        | BinOp::And(_) => false,
     }
 }

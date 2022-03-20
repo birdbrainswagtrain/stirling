@@ -61,7 +61,8 @@ impl CVal {
 enum CPlace {
     Register(Variable),
     Stack(StackSlot, i32),
-    Pointer(Value)
+    Pointer(Value),
+    None // place used for ZSTs
 }
 
 type CValOrNever = Result<CVal, ()>;
@@ -401,8 +402,9 @@ impl<'a> JITFunc<'a> {
                                 StackSlotKind::ExplicitSlot,
                                 size as u32,
                             ));
-                            CPlace::Stack(slot,0)
+                            CPlace::Stack(slot, 0)
                         }
+                        VarStorage::None => CPlace::None,
                         VarStorage::Pointer => panic!("init stack pointer"), // ssa value
                     }
                 } else {
@@ -513,7 +515,8 @@ impl<'a> JITFunc<'a> {
                 let lval = self.lower_expr(*lhs)?.unwrap_scalar();
                 let rval = self.lower_expr(*rhs)?.unwrap_scalar();
 
-                let res_val = CVal::Scalar(match (ty, op) {
+                let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
+                let res_val = CVal::Scalar(match (arg_ty, op) {
                     (Type::Int(_), LowBinOp::Add) => self.fn_builder.ins().iadd(lval, rval),
                     (Type::Int(_), LowBinOp::Sub) => self.fn_builder.ins().isub(lval, rval),
                     (Type::Int(_), LowBinOp::Mul) => self.fn_builder.ins().imul(lval, rval),
@@ -558,7 +561,6 @@ impl<'a> JITFunc<'a> {
                         self.fn_builder.ins().fsub(lval, t3)
                     }
                     _ if op.is_compare() => {
-                        let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                         match arg_ty {
                             Type::Int(_) | Type::Char => self.fn_builder.ins().icmp(
                                 op.int_cond_code(arg_ty.is_signed()),
@@ -587,11 +589,11 @@ impl<'a> JITFunc<'a> {
 
                 if is_assign {
                     let dest = self.lower_place(*lhs).unwrap();
-                    self.lower_assign(dest, res_val,*ty);
-                    panic!("TODO all assignments return void, must fix type checking");
+                    self.lower_assign(dest, res_val, *ty);
+                    CVal::Void
+                } else {
+                    res_val
                 }
-
-                res_val
             }
             Expr::UnOpPrimitive(arg, op) => {
                 let arg = self.lower_expr(*arg)?.unwrap_scalar();
@@ -629,17 +631,16 @@ impl<'a> JITFunc<'a> {
                 CVal::Scalar(self.fn_builder.ins().iconst(cty.unwrap_scalar(), x))
             }
             Expr::LitBool(x) => CVal::Scalar(self.fn_builder.ins().bconst(cty.unwrap_scalar(), *x)),
+            Expr::LitVoid => CVal::Void,
 
             Expr::Ref(x, _is_mut) => {
                 let place = self.lower_place(*x)?;
                 match place {
                     CPlace::Stack(slot, offset) => {
-                        CVal::Scalar(self.fn_builder.ins().stack_addr(ptr_ty(),slot,offset))
+                        CVal::Scalar(self.fn_builder.ins().stack_addr(ptr_ty(), slot, offset))
                     }
-                    CPlace::Pointer(ptr) => {
-                        CVal::Scalar(ptr)
-                    }
-                    _ => panic!("attempt to ref {:?}",place)
+                    CPlace::Pointer(ptr) => CVal::Scalar(ptr),
+                    _ => panic!("attempt to ref {:?}", place),
                 }
             }
             Expr::DeRef(x) => {
@@ -954,20 +955,20 @@ impl<'a> JITFunc<'a> {
     fn lower_assign(&mut self, dest: CPlace, src: CVal, ty: Type) {
         let cty = lower_type(ty);
         match src {
-            CVal::Scalar(src) => {
-                match dest {
-                    CPlace::Register(reg) => {
-                        self.fn_builder.def_var(reg, src);
-                    }
-                    CPlace::Stack(slot,offset) => {
-                        self.fn_builder.ins().stack_store(src, slot, offset);
-                    }
-                    CPlace::Pointer(addr) => {
-                        self.fn_builder.ins().store(MemFlags::trusted(),src,addr,0);
-                    }
-                    _ => panic!("todo lower assignment {:?}", dest)
+            CVal::Scalar(src) => match dest {
+                CPlace::Register(reg) => {
+                    self.fn_builder.def_var(reg, src);
                 }
-            }
+                CPlace::Stack(slot, offset) => {
+                    self.fn_builder.ins().stack_store(src, slot, offset);
+                }
+                CPlace::Pointer(addr) => {
+                    self.fn_builder
+                        .ins()
+                        .store(MemFlags::trusted(), src, addr, 0);
+                }
+                _ => panic!("todo lower assignment {:?}", dest),
+            },
             CVal::Void => (),
         }
     }
@@ -981,7 +982,7 @@ impl<'a> JITFunc<'a> {
                 if let CVal::Scalar(x) = arg {
                     CPlace::Pointer(x)
                 } else {
-                    panic!("attempt to deref {:?}",arg);
+                    panic!("attempt to deref {:?}", arg);
                 }
             }
             Expr::LitInt(_) => {
@@ -993,7 +994,7 @@ impl<'a> JITFunc<'a> {
                         StackSlotKind::ExplicitSlot,
                         size as u32,
                     ));
-                    self.fn_builder.ins().stack_store(src,slot,0);
+                    self.fn_builder.ins().stack_store(src, slot, 0);
                     CPlace::Stack(slot, 0)
                 } else {
                     panic!("can't get address of non-scalar")
