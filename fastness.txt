@@ -1,0 +1,5 @@
+
+Consider alternative codegen backends? https://github.com/vnmakarov/mir
+Consider building / using a baseline VM? https://github.com/assyrianic/Tagha
+
+Avoid monomorphization -- generate polymorphic code only?
