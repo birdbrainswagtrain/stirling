@@ -13,8 +13,11 @@
 
 ### As-Casts
 - `int -> int`
+- `int -> float`
 - `u8 -> char`
 - `char -> int`
+- `float -> float`
+- `float -> int`
 
 ### Control Flow
 - blocks, can yield values
@@ -25,7 +28,7 @@
 - simple function calls (no method invocation or generics)
 
 ### Not Yet Implemented
-- i128 / u128 do not work
+- i128 / u128 do not work -- cranelift supports them in theory but there seem to be a lot of holes in the code generator
 - Patterns, match guards, if-let, etc
 - Anything related to namespaces / modules / name resolution is probably severely busted.
 
