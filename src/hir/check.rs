@@ -157,7 +157,7 @@ impl FuncHIR {
                 }
             }
             Expr::Assign(dst, src) => {
-                assert_eq!(info.ty,Type::Void);
+                assert_eq!(info.ty, Type::Void);
                 self.check_match_2(dst, src)
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => self.check_bin_op(index, lhs, op, rhs),
@@ -317,7 +317,7 @@ impl FuncHIR {
             Expr::CallBuiltin(ref name, ref args) => {
                 let entry = BUILTINS.get(name.as_str());
                 if entry.is_none() {
-                    panic!("invalid builtin: {}",name);
+                    panic!("invalid builtin: {}", name);
                 }
 
                 let sig = &entry.unwrap().1;

@@ -1,21 +1,28 @@
-use super::{func::{Expr, FuncHIR}, types::{Type, ComplexType}};
+use super::{
+    func::{Expr, FuncHIR},
+    types::{ComplexType, Type},
+};
 
 #[derive(PartialEq, Debug)]
 pub enum VarStorage {
     Register,
     Stack,
     Pointer,
-    None // ZST
+    None, // ZST
 }
 
 pub fn get_var_storage(input_fn: &FuncHIR) -> Vec<VarStorage> {
     // TODO non-trivial aggregate arguments use StackPointer
     // TODO non-trivial aggregate vars use StackSlot
 
-    let mut res = input_fn.vars.iter().map(|expr_id| {
-        let ty = input_fn.exprs[*expr_id as usize].ty;
-        storage_for_type(ty)
-    }).collect();
+    let mut res = input_fn
+        .vars
+        .iter()
+        .map(|expr_id| {
+            let ty = input_fn.exprs[*expr_id as usize].ty;
+            storage_for_type(ty)
+        })
+        .collect();
 
     // Referenced vars must be demoted to StackSlot
     for info in &input_fn.exprs {
@@ -45,6 +52,6 @@ fn storage_for_type(ty: Type) -> VarStorage {
         Type::Void => VarStorage::None,
 
         Type::Complex(ComplexType::Ref(_, _)) => VarStorage::Register,
-        _ => panic!("storage for {:?}",ty)
+        _ => panic!("storage for {:?}", ty),
     }
 }

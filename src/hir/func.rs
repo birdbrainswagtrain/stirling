@@ -40,11 +40,11 @@ impl FuncHIR {
             vars: vec![],
             break_index: vec![],
         };
-        profile("lower AST -> HIR",||{
+        profile("lower AST -> HIR", || {
             let mut body = Block::new(Some(parent_scope));
             body.add_args(&mut code, &syn_fn.sig, ty_sig);
             body.add_from_syn(&mut code, &syn_fn.block);
-    
+
             let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
             code.root_expr = root as usize;
         });
@@ -53,7 +53,7 @@ impl FuncHIR {
             panic!("bad break or continue detected");
         }
 
-        profile("type check",|| code.check());
+        profile("type check", || code.check());
 
         code
     }

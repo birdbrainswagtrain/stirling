@@ -22,8 +22,8 @@ use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
 use crate::hir::types::{ComplexType, FloatType, IntType, Signature, Type};
 use crate::hir::var_storage::{get_var_storage, VarStorage};
-use crate::PTR_WIDTH;
 use crate::profiler::profile;
+use crate::PTR_WIDTH;
 
 #[derive(Debug)]
 enum CType {
@@ -63,7 +63,7 @@ enum CPlace {
     Register(Variable),
     Stack(StackSlot, i32),
     Pointer(Value),
-    None // place used for ZSTs
+    None, // place used for ZSTs
 }
 
 type CValOrNever = Result<CVal, ()>;
@@ -110,7 +110,8 @@ struct JIT {
 
 impl Default for JIT {
     fn default() -> Self {
-        let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names());
+        let mut jit_builder = JITBuilder::new(cranelift_module::default_libcall_names())
+            .expect("failed to make jit builder");
 
         for (key, (ptr, _)) in BUILTINS.iter() {
             let name = format!("builtin_{}", key);
@@ -159,7 +160,7 @@ impl JIT {
             .declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)
             .map_err(|e| e.to_string())?;
 
-        profile("lower HIR -> CLIF",|| {
+        profile("lower HIR -> CLIF", || {
             let mut jit_func = JITFunc {
                 input_fn: ir,
                 fn_builder: FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_ctx),
@@ -175,13 +176,12 @@ impl JIT {
             println!("CLIF IR ===============>\n{}", self.ctx.func);
         }
 
-        let compiled_fn = profile("codegen",|| {
-            self
-                .module
+        let compiled_fn = profile("codegen", || {
+            self.module
                 .define_function(fn_id, &mut self.ctx)
                 .map_err(|e| e.to_string())
         })?;
-        
+
         let size = compiled_fn.size as usize;
 
         self.module.clear_context(&mut self.ctx);
@@ -354,7 +354,7 @@ fn lower_bin_op(op: &BinOp) -> (LowBinOp, bool) {
         BinOp::ShrEq(_) => (LowBinOp::BitShiftRight, true),
 
         BinOp::And(_) => (LowBinOp::LogicAnd, false),
-        BinOp::Or(_) => (LowBinOp::LogicOr, false)
+        BinOp::Or(_) => (LowBinOp::LogicOr, false),
     }
 }
 
@@ -473,8 +473,75 @@ impl<'a> JITFunc<'a> {
                     }
                 } else if src_ty == Type::Int(IntType::U8) && *ty == Type::Char {
                     CVal::Scalar(self.fn_builder.ins().uextend(types::I32, arg))
+                } else if src_ty.is_float() && ty.is_float() {
+                    if src_ty == *ty {
+                        CVal::Scalar(arg)
+                    } else if *ty == Type::Float(FloatType::F64) {
+                        // f32 -> f64
+                        CVal::Scalar(self.fn_builder.ins().fpromote(cty.unwrap_scalar(), arg))
+                    } else {
+                        // f64 -> f32
+                        CVal::Scalar(self.fn_builder.ins().fdemote(cty.unwrap_scalar(), arg))
+                    }
+                } else if src_ty.is_int() && ty.is_float() {
+                    // int to float conversions
+                    // TODO u128 as f32 can overflow
+                    if src_ty.is_signed() {
+                        CVal::Scalar(
+                            self.fn_builder
+                                .ins()
+                                .fcvt_from_sint(cty.unwrap_scalar(), arg),
+                        )
+                    } else {
+                        CVal::Scalar(
+                            self.fn_builder
+                                .ins()
+                                .fcvt_from_uint(cty.unwrap_scalar(), arg),
+                        )
+                    }
+                } else if src_ty.is_float() && ty.is_int() {
+                    // float to int conversions
+                    // TODO there's a 100% chance this won't work for i128
+                    let int_bits = (ty.byte_size() * 8) as i64;
+                    CVal::Scalar(if ty.is_signed() {
+                        if int_bits < 32 {
+                            // YUCK
+                            let min = -(1 << (int_bits - 1));
+                            let max = (1 << (int_bits - 1)) - 1;
+
+                            let min = self.fn_builder.ins().iconst(types::I32, min);
+                            let max = self.fn_builder.ins().iconst(types::I32, max);
+
+                            let t1 = self.fn_builder.ins().fcvt_to_sint_sat(types::I32, arg);
+                            let t2 = self.fn_builder.ins().imax(t1, min);
+                            let t3 = self.fn_builder.ins().imin(t2, max);
+                            self.fn_builder.ins().ireduce(cty.unwrap_scalar(), t3)
+                        } else {
+                            self.fn_builder
+                                .ins()
+                                .fcvt_to_sint_sat(cty.unwrap_scalar(), arg)
+                        }
+                    } else {
+                        if int_bits < 32 {
+                            // ALSO YUCK
+                            let min = 0;
+                            let max = (1 << int_bits) - 1;
+
+                            let min = self.fn_builder.ins().iconst(types::I32, min);
+                            let max = self.fn_builder.ins().iconst(types::I32, max);
+
+                            let t1 = self.fn_builder.ins().fcvt_to_uint_sat(types::I32, arg);
+                            let t2 = self.fn_builder.ins().umax(t1, min);
+                            let t3 = self.fn_builder.ins().umin(t2, max);
+                            self.fn_builder.ins().ireduce(cty.unwrap_scalar(), t3)
+                        } else {
+                            self.fn_builder
+                                .ins()
+                                .fcvt_to_uint_sat(cty.unwrap_scalar(), arg)
+                        }
+                    })
                 } else {
-                    panic!("non integer casts nyi");
+                    panic!("casts nyi {:?} -> {:?}", src_ty, ty);
                 }
             }
             Expr::Assign(dest, src) => {
@@ -564,29 +631,27 @@ impl<'a> JITFunc<'a> {
                         let t3 = self.fn_builder.ins().fmul(t2, rval);
                         self.fn_builder.ins().fsub(lval, t3)
                     }
-                    _ if op.is_compare() => {
-                        match arg_ty {
-                            Type::Int(_) | Type::Char => self.fn_builder.ins().icmp(
-                                op.int_cond_code(arg_ty.is_signed()),
-                                lval,
-                                rval,
-                            ),
-                            Type::Float(_) => {
-                                self.fn_builder.ins().fcmp(op.float_cond_code(), lval, rval)
-                            }
-                            Type::Bool => {
-                                if op == LowBinOp::Eq {
-                                    let tmp = self.fn_builder.ins().bxor(lval, rval);
-                                    self.fn_builder.ins().bnot(tmp)
-                                } else if op == LowBinOp::Ne {
-                                    self.fn_builder.ins().bxor(lval, rval)
-                                } else {
-                                    panic!("bad primitive bool compare {:?}", op);
-                                }
-                            }
-                            _ => panic!("can't compare {:?}", arg_ty),
+                    _ if op.is_compare() => match arg_ty {
+                        Type::Int(_) | Type::Char => self.fn_builder.ins().icmp(
+                            op.int_cond_code(arg_ty.is_signed()),
+                            lval,
+                            rval,
+                        ),
+                        Type::Float(_) => {
+                            self.fn_builder.ins().fcmp(op.float_cond_code(), lval, rval)
                         }
-                    }
+                        Type::Bool => {
+                            if op == LowBinOp::Eq {
+                                let tmp = self.fn_builder.ins().bxor(lval, rval);
+                                self.fn_builder.ins().bnot(tmp)
+                            } else if op == LowBinOp::Ne {
+                                self.fn_builder.ins().bxor(lval, rval)
+                            } else {
+                                panic!("bad primitive bool compare {:?}", op);
+                            }
+                        }
+                        _ => panic!("can't compare {:?}", arg_ty),
+                    },
 
                     _ => panic!("can't compile primitive op {:?} {:?}", ty, op),
                 });

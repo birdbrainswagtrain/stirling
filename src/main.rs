@@ -8,21 +8,25 @@ use crate::hir::item::{Function, Item, ItemName, Scope};
 use crate::jit::jit_compile;
 
 use memoffset::offset_of;
-use profiler::{profile_log, profile};
+use profiler::{profile, profile_log};
 
 const PTR_WIDTH: usize = 8;
 
 const VERBOSE: bool = false;
-const LOG_JITS: bool = true;
+const LOG_JITS: bool = false;
 
 fn main() {
     check_abi();
 
     let file_name = std::env::args().nth(1).expect("no file name provided");
 
-    let file_string = profile("load source", || std::fs::read_to_string(&file_name).expect("failed to read source file"));
+    let file_string = profile("load source", || {
+        std::fs::read_to_string(&file_name).expect("failed to read source file")
+    });
 
-    let syn_tree: syn::File = profile("parse", || syn::parse_str(&file_string).expect("failed to parse source code"));
+    let syn_tree: syn::File = profile("parse", || {
+        syn::parse_str(&file_string).expect("failed to parse source code")
+    });
 
     let module = Scope::from_syn_file(syn_tree);
     let module = module.borrow();
