@@ -50,6 +50,7 @@ fn storage_for_type(ty: Type) -> VarStorage {
         Type::Int(_) => VarStorage::Register,
         Type::Float(_) => VarStorage::Register,
         Type::Char => VarStorage::Register,
+        Type::Bool => VarStorage::Register,
 
         Type::Void => VarStorage::None,
 

@@ -248,7 +248,7 @@ impl Type {
                 | IntType::U16
                 | IntType::U8 => false,
             }
-        } else if *self == Type::Char {
+        } else if *self == Type::Char || *self == Type::Bool {
             false
         } else {
             panic!("can't check signed-ness of {:?}", self)
@@ -267,6 +267,7 @@ impl Type {
             Type::Float(FloatType::F32) => 4,
 
             Type::Char => 4,
+            Type::Bool => 1,
 
             Type::Int(IntType::ISize)
             | Type::Int(IntType::USize)

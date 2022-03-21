@@ -455,7 +455,8 @@ impl<'a> JITFunc<'a> {
 
                 let arg = self.lower_expr(*arg)?.unwrap_scalar();
 
-                if (src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Char) && ty.is_int() {
+                if (src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Char || src_ty == Type::Bool) && ty.is_int() {
+                    let arg = if src_ty == Type::Bool { self.fn_builder.ins().bint(types::I8,arg) } else { arg };
                     let size_src = src_ty.byte_size();
                     let size_dest = ty.byte_size();
 

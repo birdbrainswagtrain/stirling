@@ -16,6 +16,7 @@
 - int -> float
 - u8 -> char
 - char -> int
+- bool -> int
 - float -> float
 - float -> int
 - ref -> ptr
