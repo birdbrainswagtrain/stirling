@@ -2,6 +2,8 @@ use once_cell::sync::Lazy;
 
 use std::{collections::HashSet, sync::RwLock};
 
+use crate::PTR_WIDTH;
+
 use super::item::{try_path_to_name, Scope};
 
 struct TypeRegistry {
@@ -46,6 +48,7 @@ impl Signature {
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum ComplexType {
     Ref(Type, bool),
+    Ptr(Type, bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -98,10 +101,22 @@ impl Type {
             syn::Type::Reference(tr) => {
                 let is_mut = tr.mutability.is_some();
                 let inner = Type::from_syn(&tr.elem, scope);
-                return Type::from_agg(ComplexType::Ref(inner, is_mut));
+                return Type::from_complex(ComplexType::Ref(inner, is_mut));
+            }
+            syn::Type::Ptr(tp) => {
+                let is_mut = tp.mutability.is_some();
+                let inner = Type::from_syn(&tp.elem, scope);
+                return Type::from_complex(ComplexType::Ptr(inner, is_mut));
             }
             syn::Type::Never(_) => return Type::Never,
-
+            syn::Type::Infer(_) => return Type::Unknown,
+            syn::Type::Tuple(syn::TypeTuple { elems, .. }) => {
+                if elems.len() == 0 {
+                    return Type::Void;
+                } else {
+                    panic!("todo real tuple types");
+                }
+            }
             _ => (),
         }
         panic!("failed to convert type {:?}", syn_ty)
@@ -133,13 +148,40 @@ impl Type {
         }
     }
 
+    /// This will verify that the type is known, convert IntUnknown / FloatUnknown to their default types, or panic
+    pub fn check_known(&mut self) -> Type {
+        match self {
+            Type::Int(_) | Type::Float(_) | Type::Bool | Type::Char | Type::Void | Type::Never => {
+                ()
+            }
+            Type::Unknown => panic!("unknown type in function"),
+            Type::IntUnknown => *self = Type::Int(IntType::I32),
+            Type::FloatUnknown => *self = Type::Float(FloatType::F64),
+            Type::Complex(ComplexType::Ref(inner, is_mut)) => {
+                if inner.is_unknown() {
+                    let new_inner = inner.clone().check_known();
+                    *self = Type::from_complex(ComplexType::Ref(new_inner, *is_mut));
+                }
+            }
+            Type::Complex(ComplexType::Ptr(inner, is_mut)) => {
+                if inner.is_unknown() {
+                    let new_inner = inner.clone().check_known();
+                    *self = Type::from_complex(ComplexType::Ptr(new_inner, *is_mut));
+                }
+            }
+        }
+        *self
+    }
+
     pub fn is_unknown(&self) -> bool {
         match self {
+            Type::Int(_) | Type::Float(_) | Type::Bool | Type::Char | Type::Void | Type::Never => {
+                false
+            }
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             Type::Complex(cpx) => match cpx {
-                ComplexType::Ref(t, _) => t.is_unknown(),
+                ComplexType::Ref(t, _) | ComplexType::Ptr(t, _) => t.is_unknown(),
             },
-            _ => false,
         }
     }
 
@@ -160,6 +202,20 @@ impl Type {
     pub fn is_float(&self) -> bool {
         match self {
             Type::FloatUnknown | Type::Float(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_ptr(&self) -> bool {
+        match self {
+            Type::Complex(ComplexType::Ptr(..)) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_ref(&self) -> bool {
+        match self {
+            Type::Complex(ComplexType::Ref(..)) => true,
             _ => false,
         }
     }
@@ -212,6 +268,11 @@ impl Type {
 
             Type::Char => 4,
 
+            Type::Int(IntType::ISize)
+            | Type::Int(IntType::USize)
+            | Type::Complex(ComplexType::Ptr(..))
+            | Type::Complex(ComplexType::Ref(..)) => PTR_WIDTH,
+
             _ => panic!("cannot size {:?}", self),
         }
     }
@@ -248,7 +309,7 @@ impl Type {
         }
     }
 
-    pub fn from_agg(t: ComplexType) -> Type {
+    pub fn from_complex(t: ComplexType) -> Type {
         let mut registry = TYPE_REGISTRY.write().unwrap();
         if let Some(res) = registry.lookup.get(&t) {
             Type::Complex(res)

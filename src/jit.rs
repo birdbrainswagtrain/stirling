@@ -210,9 +210,6 @@ fn lower_type(ty: Type) -> CType {
         Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Scalar(types::I8),
         Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Scalar(ptr_ty()),
 
-        // Refs
-        Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
-
         // Floats
         Type::Float(FloatType::F64) => CType::Scalar(types::F64),
         Type::Float(FloatType::F32) => CType::Scalar(types::F32),
@@ -221,6 +218,10 @@ fn lower_type(ty: Type) -> CType {
         Type::Char => CType::Scalar(types::I32),
         Type::Void => CType::Void,
         Type::Never => CType::Never,
+
+        // Refs and Pointers
+        Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
+        Type::Complex(ComplexType::Ptr(..)) => CType::Scalar(ptr_ty()),
 
         _ => panic!("unknown type {:?}", ty),
     }
@@ -454,7 +455,7 @@ impl<'a> JITFunc<'a> {
 
                 let arg = self.lower_expr(*arg)?.unwrap_scalar();
 
-                if (src_ty.is_int() || src_ty == Type::Char) && ty.is_int() {
+                if (src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Char) && ty.is_int() {
                     let size_src = src_ty.byte_size();
                     let size_dest = ty.byte_size();
 
@@ -540,8 +541,10 @@ impl<'a> JITFunc<'a> {
                                 .fcvt_to_uint_sat(cty.unwrap_scalar(), arg)
                         }
                     })
+                } else if (src_ty.is_ptr() || src_ty.is_ref()) && ty.is_ptr() {
+                    CVal::Scalar(arg)
                 } else {
-                    panic!("casts nyi {:?} -> {:?}", src_ty, ty);
+                    panic!("cast nyi {:?} -> {:?}", src_ty, ty);
                 }
             }
             Expr::Assign(dest, src) => {
@@ -1055,7 +1058,7 @@ impl<'a> JITFunc<'a> {
                 }
             }
             // store temporaries on the stack to convert them to places
-            Expr::LitInt(_) | Expr::LitFloat(_) => {
+            Expr::LitInt(_) | Expr::LitFloat(_) | Expr::Block(..) => {
                 let src = self.lower_expr(expr_id)?;
 
                 if let CVal::Scalar(src) = src {
@@ -1067,10 +1070,10 @@ impl<'a> JITFunc<'a> {
                     self.fn_builder.ins().stack_store(src, slot, 0);
                     CPlace::Stack(slot, 0)
                 } else {
-                    panic!("can't get address of non-scalar")
+                    panic!("can't get place of non-scalar")
                 }
             }
-            _ => panic!("get addr: {:?}", expr),
+            _ => panic!("get place: {:?}", expr),
         })
     }
 }

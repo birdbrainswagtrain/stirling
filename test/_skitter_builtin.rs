@@ -10,10 +10,6 @@ pub extern "C" fn print_char(x: char) {
     println!("{}",x);
 }
 
-pub extern "C" fn print_header(x: i64) {
-    println!("> {}",x);
-}
-
 pub extern "C" fn assert(index: i32, val: bool) {
     if !val {
         panic!("assert #{} failed",index);

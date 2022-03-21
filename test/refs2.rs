@@ -1,3 +1,5 @@
+mod _skitter_builtin;
+
 fn main() {
     {
         let a = 100;
@@ -9,7 +11,7 @@ fn main() {
         let pc = c as *const i32 as usize;
         let pd = d as *const i32 as usize;
 
-        println!("2 {}",pb == pc);
-        println!("2 {}",pc != pd);
+        _skitter_builtin::assert(1,pb == pc);
+        _skitter_builtin::assert(2,pc != pd);
     }
 }

@@ -50,16 +50,7 @@ impl FuncHIR {
         }
 
         for i in 0..self.exprs.len() {
-            let ty = self.exprs[i].ty;
-            if ty.is_unknown() {
-                if ty == Type::IntUnknown {
-                    self.exprs[i].ty = Type::Int(IntType::I32);
-                } else if ty == Type::FloatUnknown {
-                    self.exprs[i].ty = Type::Float(FloatType::F64);
-                } else {
-                    panic!("function contains unknown type {:?}", ty);
-                }
-            }
+            self.exprs[i].ty.check_known();
         }
         if crate::VERBOSE {
             println!("=================== FINAL ===================");
@@ -126,7 +117,8 @@ impl FuncHIR {
                 }
 
                 // Otherwise, upgrade self to arg
-                self.exprs[index as usize].ty = Type::from_agg(ComplexType::Ref(arg_ty, is_mut));
+                self.exprs[index as usize].ty =
+                    Type::from_complex(ComplexType::Ref(arg_ty, is_mut));
 
                 let r1 = !self.exprs[index as usize].ty.is_unknown();
                 let r2 = !self.exprs[arg as usize].ty.is_unknown();
@@ -140,13 +132,15 @@ impl FuncHIR {
                 let arg_ty = self.exprs[arg as usize].ty;
                 let mut mutated = false;
                 if let Some((ref_ty, ref_mut)) = arg_ty.try_get_ref() {
-                    if info.ty.can_upgrade_to(ref_ty) {
-                        self.exprs[index as usize].ty = ref_ty;
-                    } else {
-                        self.exprs[arg as usize].ty =
-                            Type::from_agg(ComplexType::Ref(info.ty, ref_mut))
+                    if info.ty != ref_ty {
+                        if info.ty.can_upgrade_to(ref_ty) {
+                            self.exprs[index as usize].ty = ref_ty;
+                        } else {
+                            self.exprs[arg as usize].ty =
+                                Type::from_complex(ComplexType::Ref(info.ty, ref_mut))
+                        }
+                        mutated = true;
                     }
-                    mutated = true;
                 }
                 let r1 = !self.exprs[index as usize].ty.is_unknown();
                 let r2 = !self.exprs[arg as usize].ty.is_unknown();

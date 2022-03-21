@@ -12,12 +12,15 @@
 - **References**: Scalar types can be reference and dereferenced.
 
 ### As-Casts
-- `int -> int`
-- `int -> float`
-- `u8 -> char`
-- `char -> int`
-- `float -> float`
-- `float -> int`
+- int -> int
+- int -> float
+- u8 -> char
+- char -> int
+- float -> float
+- float -> int
+- ref -> ptr
+- ptr -> ptr
+- ptr -> int
 
 ### Control Flow
 - blocks, can yield values

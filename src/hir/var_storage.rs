@@ -43,6 +43,8 @@ fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<VarStorage>
     }
 }
 
+// TODO: reuse type lowering code for this instead of
+// this duplicate lookup function
 fn storage_for_type(ty: Type) -> VarStorage {
     match ty {
         Type::Int(_) => VarStorage::Register,
