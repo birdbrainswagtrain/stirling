@@ -20,31 +20,14 @@ use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
 use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
-use crate::hir::types::{ComplexType, FloatType, IntType, Signature, Type};
-use crate::hir::var_storage::{get_var_storage, VarStorage};
+use crate::hir::types::{ComplexType, FloatType, IntType, Signature, Type, CType, ptr_ty};
+use crate::hir::var_storage::{get_var_storage, PlaceKind};
 use crate::profiler::profile;
 use crate::PTR_WIDTH;
 
-#[derive(Debug)]
-enum CType {
-    Void,
-    Never,
-    Scalar(cranelift::prelude::Type),
-}
-
-impl CType {
-    fn unwrap_scalar(&self) -> cranelift::prelude::Type {
-        if let CType::Scalar(val) = self {
-            *val
-        } else {
-            panic!("failed to unwrap scalar type");
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 enum CVal {
-    Void,
+    None,
     Scalar(Value),
 }
 
@@ -70,11 +53,6 @@ type CValOrNever = Result<CVal, ()>;
 type CPlaceOrNever = Result<CPlace, ()>;
 
 type CSignature = cranelift::prelude::Signature;
-
-fn ptr_ty() -> cranelift::prelude::Type {
-    assert!(PTR_WIDTH == 8);
-    types::I64
-}
 
 pub extern "C" fn jit_compile(func: &Function) -> *const u8 {
     let start = Instant::now();
@@ -198,35 +176,6 @@ impl JIT {
     }
 }
 
-fn lower_type(ty: Type) -> CType {
-    match ty {
-        // Ints
-        Type::Int(IntType::I128) | Type::Int(IntType::U128) => {
-            panic!("128 bit integers are broken")
-        }
-        Type::Int(IntType::I64) | Type::Int(IntType::U64) => CType::Scalar(types::I64),
-        Type::Int(IntType::I32) | Type::Int(IntType::U32) => CType::Scalar(types::I32),
-        Type::Int(IntType::I16) | Type::Int(IntType::U16) => CType::Scalar(types::I16),
-        Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Scalar(types::I8),
-        Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Scalar(ptr_ty()),
-
-        // Floats
-        Type::Float(FloatType::F64) => CType::Scalar(types::F64),
-        Type::Float(FloatType::F32) => CType::Scalar(types::F32),
-
-        Type::Bool => CType::Scalar(types::B1),
-        Type::Char => CType::Scalar(types::I32),
-        Type::Void => CType::Void,
-        Type::Never => CType::Never,
-
-        // Refs and Pointers
-        Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
-        Type::Complex(ComplexType::Ptr(..)) => CType::Scalar(ptr_ty()),
-
-        _ => panic!("unknown type {:?}", ty),
-    }
-}
-
 fn lower_sig(sig: &Signature) -> CSignature {
     #[cfg(not(target_os = "windows"))]
     let call_conv = CallConv::SystemV;
@@ -234,12 +183,12 @@ fn lower_sig(sig: &Signature) -> CSignature {
     let mut result = CSignature::new(call_conv);
 
     for ty in &sig.inputs {
-        if let CType::Scalar(cty) = lower_type(*ty) {
+        if let CType::Scalar(cty) = ty.lower() {
             result.params.push(AbiParam::new(cty));
         }
     }
 
-    if let CType::Scalar(cty) = lower_type(sig.output) {
+    if let CType::Scalar(cty) = sig.output.lower() {
         result.returns.push(AbiParam::new(cty));
     }
 
@@ -375,7 +324,7 @@ struct JITFunc<'a> {
 }
 
 impl<'a> JITFunc<'a> {
-    pub fn compile(&mut self, var_kinds: Vec<VarStorage>) {
+    pub fn compile(&mut self, var_kinds: Vec<PlaceKind>) {
         let entry_block = self.fn_builder.create_block();
 
         let mut next_var_id = 0;
@@ -389,8 +338,8 @@ impl<'a> JITFunc<'a> {
                 let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[*expr_index as usize];
                 if let Expr::Var(_) = expr {
                     match storage {
-                        VarStorage::Register => {
-                            if let CType::Scalar(cty) = lower_type(*ty) {
+                        PlaceKind::Register => {
+                            if let CType::Scalar(cty) = ty.lower() {
                                 let var = Variable::new(next_var_id);
                                 next_var_id += 1;
                                 self.fn_builder.declare_var(var, cty);
@@ -399,7 +348,7 @@ impl<'a> JITFunc<'a> {
                                 panic!("attempt to alloc register for {:?}", ty);
                             }
                         }
-                        VarStorage::Stack => {
+                        PlaceKind::Stack => {
                             let size = ty.byte_size();
                             let slot = self.fn_builder.create_stack_slot(StackSlotData::new(
                                 StackSlotKind::ExplicitSlot,
@@ -407,8 +356,8 @@ impl<'a> JITFunc<'a> {
                             ));
                             CPlace::Stack(slot, 0)
                         }
-                        VarStorage::None => CPlace::None,
-                        VarStorage::Pointer => panic!("init stack pointer"), // ssa value
+                        PlaceKind::None => CPlace::None,
+                        PlaceKind::Pointer => panic!("init stack pointer"), // ssa value
                     }
                 } else {
                     panic!("can not create var from {:?}", expr);
@@ -432,7 +381,7 @@ impl<'a> JITFunc<'a> {
             Ok(CVal::Scalar(val)) => {
                 self.fn_builder.ins().return_(&[val]);
             }
-            Ok(CVal::Void) => {
+            Ok(CVal::None) => {
                 self.fn_builder.ins().return_(&[]);
             }
             Err(_) => (),
@@ -444,7 +393,7 @@ impl<'a> JITFunc<'a> {
 
     fn lower_expr(&mut self, expr_id: u32) -> CValOrNever {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
-        let cty = lower_type(*ty);
+        let cty = ty.lower();
         Ok(match expr {
             Expr::Var(var_id) => match &self.var_storage[*var_id as usize] {
                 CPlace::Register(reg) => CVal::Scalar(self.fn_builder.use_var(*reg)),
@@ -552,8 +501,8 @@ impl<'a> JITFunc<'a> {
                 let dest_place = self.lower_place(*dest)?;
                 let src_val = self.lower_expr(*src)?;
 
-                self.lower_assign(dest_place, src_val, *ty);
-                CVal::Void
+                self.lower_assign(dest_place, src_val);
+                CVal::None
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => {
                 let (op, is_assign) = lower_bin_op(op);
@@ -662,8 +611,8 @@ impl<'a> JITFunc<'a> {
 
                 if is_assign {
                     let dest = self.lower_place(*lhs).unwrap();
-                    self.lower_assign(dest, res_val, *ty);
-                    CVal::Void
+                    self.lower_assign(dest, res_val);
+                    CVal::None
                 } else {
                     res_val
                 }
@@ -704,7 +653,7 @@ impl<'a> JITFunc<'a> {
                 CVal::Scalar(self.fn_builder.ins().iconst(cty.unwrap_scalar(), x))
             }
             Expr::LitBool(x) => CVal::Scalar(self.fn_builder.ins().bconst(cty.unwrap_scalar(), *x)),
-            Expr::LitVoid => CVal::Void,
+            Expr::LitVoid => CVal::None,
 
             Expr::Ref(x, _is_mut) => {
                 let place = self.lower_place(*x)?;
@@ -746,7 +695,7 @@ impl<'a> JITFunc<'a> {
                 self.fn_builder.seal_block(final_cb);
                 self.fn_builder.switch_to_block(final_cb);
 
-                CVal::Void
+                CVal::None
             }
             // if-then-else which can yield values
             Expr::If(cond, then_block, Some(else_expr)) => {
@@ -770,7 +719,7 @@ impl<'a> JITFunc<'a> {
                     Ok(CVal::Scalar(v)) => {
                         self.fn_builder.ins().jump(final_cb, &[v]);
                     }
-                    Ok(CVal::Void) => {
+                    Ok(CVal::None) => {
                         self.fn_builder.ins().jump(final_cb, &[]);
                     }
                     Err(_) => (),
@@ -784,7 +733,7 @@ impl<'a> JITFunc<'a> {
                     Ok(CVal::Scalar(v)) => {
                         self.fn_builder.ins().jump(final_cb, &[v]);
                     }
-                    Ok(CVal::Void) => {
+                    Ok(CVal::None) => {
                         self.fn_builder.ins().jump(final_cb, &[]);
                     }
                     Err(_) => (),
@@ -803,7 +752,7 @@ impl<'a> JITFunc<'a> {
                     self.fn_builder.append_block_param(final_cb, cty);
                     CVal::Scalar(self.fn_builder.block_params(final_cb)[0])
                 } else {
-                    CVal::Void
+                    CVal::None
                 };
 
                 res
@@ -848,7 +797,7 @@ impl<'a> JITFunc<'a> {
                 // switch to final block
                 self.fn_builder.switch_to_block(final_cb);
 
-                CVal::Void
+                CVal::None
             }
             Expr::Loop(body_block) => {
                 let body_cb = self.fn_builder.create_block();
@@ -881,7 +830,7 @@ impl<'a> JITFunc<'a> {
                     self.fn_builder.append_block_param(final_cb, cty);
                     CVal::Scalar(self.fn_builder.block_params(final_cb)[0])
                 } else {
-                    CVal::Void
+                    CVal::None
                 };
 
                 res
@@ -890,7 +839,7 @@ impl<'a> JITFunc<'a> {
                 let val = if let Some(val) = val {
                     self.lower_expr(*val)?
                 } else {
-                    CVal::Void
+                    CVal::None
                 };
 
                 let loop_info = self
@@ -902,7 +851,7 @@ impl<'a> JITFunc<'a> {
                     CVal::Scalar(val) => {
                         self.fn_builder.ins().jump(loop_info.b_break, &[val]);
                     }
-                    CVal::Void => {
+                    CVal::None => {
                         self.fn_builder.ins().jump(loop_info.b_break, &[]);
                     }
                 }
@@ -941,7 +890,7 @@ impl<'a> JITFunc<'a> {
                 if call_res.len() > 0 {
                     CVal::Scalar(call_res[0])
                 } else {
-                    CVal::Void
+                    CVal::None
                 }
             }
             Expr::Call(func, args) => {
@@ -1006,7 +955,7 @@ impl<'a> JITFunc<'a> {
                 if call_res.len() > 0 {
                     CVal::Scalar(call_res[0])
                 } else {
-                    CVal::Void
+                    CVal::None
                 }
             }
             _ => panic!("todo lower expr {:?}", expr),
@@ -1021,12 +970,11 @@ impl<'a> JITFunc<'a> {
         if let Some(expr_id) = &block.result {
             self.lower_expr(*expr_id)
         } else {
-            Ok(CVal::Void)
+            Ok(CVal::None)
         }
     }
 
-    fn lower_assign(&mut self, dest: CPlace, src: CVal, ty: Type) {
-        let cty = lower_type(ty);
+    fn lower_assign(&mut self, dest: CPlace, src: CVal) {
         match src {
             CVal::Scalar(src) => match dest {
                 CPlace::Register(reg) => {
@@ -1042,7 +990,7 @@ impl<'a> JITFunc<'a> {
                 }
                 _ => panic!("todo lower assignment {:?}", dest),
             },
-            CVal::Void => (),
+            CVal::None => (),
         }
     }
 

@@ -238,6 +238,13 @@ impl Block {
                 let is_mut = mutability.is_some();
                 code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
             }
+            syn::Expr::Field(syn::ExprField{base,member,..}) => {
+                let id_arg = self.add_expr(code, base);
+                match member {
+                    syn::Member::Named(name) => panic!("named indexing unsupported"),
+                    syn::Member::Unnamed(index) => code.push_expr(Expr::IndexTuple(id_arg, index.index), Type::Unknown)
+                }
+            }
             syn::Expr::Assign(syn::ExprAssign { left, right, .. }) => {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
@@ -301,7 +308,10 @@ impl Block {
                 if elems.len() == 0 {
                     code.push_expr(Expr::LitVoid, Type::Void)
                 } else {
-                    panic!("todo actual tuples");
+                    let fields: Vec<_> = elems.iter().map(|elem| {
+                        self.add_expr(code, elem)
+                    }).collect();
+                    code.push_expr(Expr::NewTuple(fields), Type::Unknown)
                 }
             }
             // control flow-ish stuff
@@ -397,11 +407,13 @@ pub enum Expr {
     UnOpPrimitive(u32, syn::UnOp),
     Ref(u32, bool), // 2nd value indicates mutability
     DeRef(u32),
+    IndexTuple(u32,u32), // 2nd value indicates index
     LitInt(u128),
     LitFloat(f64),
     LitBool(bool),
     LitChar(char),
     LitVoid,
+    NewTuple(Vec<u32>),
     Assign(u32, u32),
     CastPrimitive(u32),
     If(u32, Box<Block>, Option<u32>),

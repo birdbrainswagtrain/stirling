@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 
 use std::{collections::HashSet, sync::RwLock};
+use cranelift::prelude::types;
 
 use crate::PTR_WIDTH;
 
@@ -49,6 +50,7 @@ impl Signature {
 pub enum ComplexType {
     Ref(Type, bool),
     Ptr(Type, bool),
+    Tuple(Vec<Type>)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -169,6 +171,9 @@ impl Type {
                     *self = Type::from_complex(ComplexType::Ptr(new_inner, *is_mut));
                 }
             }
+            Type::Complex(ComplexType::Tuple(fields)) => {
+                panic!("tuple");
+            }
         }
         *self
     }
@@ -181,6 +186,9 @@ impl Type {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             Type::Complex(cpx) => match cpx {
                 ComplexType::Ref(t, _) | ComplexType::Ptr(t, _) => t.is_unknown(),
+                ComplexType::Tuple(fields) => {
+                    fields.iter().any(|x| x.is_unknown())
+                }
             },
         }
     }
@@ -278,6 +286,35 @@ impl Type {
         }
     }
 
+    pub fn lower(&self) -> CType {
+        match self {
+            // Ints
+            Type::Int(IntType::I128) | Type::Int(IntType::U128) => {
+                panic!("128 bit integers are broken")
+            }
+            Type::Int(IntType::I64) | Type::Int(IntType::U64) => CType::Scalar(types::I64),
+            Type::Int(IntType::I32) | Type::Int(IntType::U32) => CType::Scalar(types::I32),
+            Type::Int(IntType::I16) | Type::Int(IntType::U16) => CType::Scalar(types::I16),
+            Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Scalar(types::I8),
+            Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Scalar(ptr_ty()),
+    
+            // Floats
+            Type::Float(FloatType::F64) => CType::Scalar(types::F64),
+            Type::Float(FloatType::F32) => CType::Scalar(types::F32),
+    
+            Type::Bool => CType::Scalar(types::B1),
+            Type::Char => CType::Scalar(types::I32),
+            Type::Void => CType::None,
+            Type::Never => CType::Never,
+    
+            // Refs and Pointers
+            Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
+            Type::Complex(ComplexType::Ptr(..)) => CType::Scalar(ptr_ty()),
+    
+            _ => panic!("can't lower type {:?}", self),
+        }
+    }
+
     pub fn can_upgrade_to(self, other: Type) -> bool {
         if self == other {
             panic!("type equivilance should be checked before calling this");
@@ -329,4 +366,26 @@ impl Type {
             None
         }
     }
+}
+
+#[derive(Debug)]
+pub enum CType {
+    None,
+    Never,
+    Scalar(cranelift::prelude::Type),
+}
+
+impl CType {
+    pub fn unwrap_scalar(&self) -> cranelift::prelude::Type {
+        if let CType::Scalar(val) = self {
+            *val
+        } else {
+            panic!("failed to unwrap scalar type");
+        }
+    }
+}
+
+pub fn ptr_ty() -> cranelift::prelude::Type {
+    assert!(PTR_WIDTH == 8);
+    types::I64
 }

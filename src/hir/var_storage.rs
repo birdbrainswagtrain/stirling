@@ -1,17 +1,17 @@
 use super::{
     func::{Expr, FuncHIR},
-    types::{ComplexType, Type},
+    types::{ComplexType, Type, CType},
 };
 
 #[derive(PartialEq, Debug)]
-pub enum VarStorage {
+pub enum PlaceKind {
     Register,
     Stack,
     Pointer,
     None, // ZST
 }
 
-pub fn get_var_storage(input_fn: &FuncHIR) -> Vec<VarStorage> {
+pub fn get_var_storage(input_fn: &FuncHIR) -> Vec<PlaceKind> {
     // TODO non-trivial aggregate arguments use StackPointer
     // TODO non-trivial aggregate vars use StackSlot
 
@@ -34,27 +34,20 @@ pub fn get_var_storage(input_fn: &FuncHIR) -> Vec<VarStorage> {
     res
 }
 
-fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<VarStorage>) {
+fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<PlaceKind>) {
     let expr = &input_fn.exprs[id as usize].expr;
     if let Expr::Var(var_id) = expr {
-        if res[*var_id as usize] == VarStorage::Register {
-            res[*var_id as usize] = VarStorage::Stack;
+        if res[*var_id as usize] == PlaceKind::Register {
+            res[*var_id as usize] = PlaceKind::Stack;
         }
     }
 }
 
 // TODO: reuse type lowering code for this instead of
 // this duplicate lookup function
-fn storage_for_type(ty: Type) -> VarStorage {
-    match ty {
-        Type::Int(_) => VarStorage::Register,
-        Type::Float(_) => VarStorage::Register,
-        Type::Char => VarStorage::Register,
-        Type::Bool => VarStorage::Register,
-
-        Type::Void => VarStorage::None,
-
-        Type::Complex(ComplexType::Ref(_, _)) => VarStorage::Register,
-        _ => panic!("storage for {:?}", ty),
+fn storage_for_type(ty: Type) -> PlaceKind {
+    match ty.lower() {
+        CType::Never | CType::None => PlaceKind::None,
+        CType::Scalar(_) => PlaceKind::Register
     }
 }
