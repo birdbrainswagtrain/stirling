@@ -94,51 +94,51 @@ impl FuncHIR {
                 }
             }
             Expr::Ref(arg, is_mut) => {
-                // NOTE: coercions might require AsRef
                 let arg_ty = self.exprs[arg as usize].ty;
-                //let ref_ty = self.exprs[index as usize].ty.ref_target();
-                if let Some((ref_ty, ref_mut)) = self.exprs[index as usize].ty.try_get_ref() {
-                    assert_eq!(is_mut, ref_mut);
-                    if arg_ty == ref_ty {
-                        return CheckResult {
-                            mutated: false,
-                            resolved: !ref_ty.is_unknown(),
-                        };
+
+                let ref_ty = if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) =
+                    self.exprs[index as usize].ty
+                {
+                    assert_eq!(is_mut, *ref_mut);
+                    *ref_ty
+                } else {
+                    Type::Unknown
+                };
+
+                if ref_ty == arg_ty {
+                    CheckResult {
+                        mutated: false,
+                        resolved: !ref_ty.is_unknown(),
                     }
-                    if arg_ty.can_upgrade_to(ref_ty) {
-                        // Upgrade arg to self
-                        self.exprs[arg as usize].ty = ref_ty;
+                } else {
+                    let new_ty = ref_ty.unify(arg_ty);
 
-                        return CheckResult {
-                            mutated: true,
-                            resolved: !ref_ty.is_unknown(),
-                        };
+                    self.exprs[arg as usize].ty = new_ty;
+                    self.exprs[index as usize].ty =
+                        Type::from_complex(ComplexType::Ref(new_ty, is_mut));
+
+                    let r1 = !self.exprs[index as usize].ty.is_unknown();
+                    let r2 = !self.exprs[arg as usize].ty.is_unknown();
+
+                    CheckResult {
+                        mutated: true,
+                        resolved: !new_ty.is_unknown(),
                     }
-                }
-
-                // Otherwise, upgrade self to arg
-                self.exprs[index as usize].ty =
-                    Type::from_complex(ComplexType::Ref(arg_ty, is_mut));
-
-                let r1 = !self.exprs[index as usize].ty.is_unknown();
-                let r2 = !self.exprs[arg as usize].ty.is_unknown();
-
-                CheckResult {
-                    mutated: true,
-                    resolved: r1 && r2,
                 }
             }
             Expr::DeRef(arg) => {
                 let arg_ty = self.exprs[arg as usize].ty;
                 let mut mutated = false;
-                if let Some((ref_ty, ref_mut)) = arg_ty.try_get_ref() {
-                    if info.ty != ref_ty {
-                        if info.ty.can_upgrade_to(ref_ty) {
-                            self.exprs[index as usize].ty = ref_ty;
-                        } else {
-                            self.exprs[arg as usize].ty =
-                                Type::from_complex(ComplexType::Ref(info.ty, ref_mut))
-                        }
+                // deref can be overridden, so we can't just assume the arg type is a ref
+                if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) = arg_ty
+                {
+                    if info.ty != *ref_ty {
+                        let new_ty = info.ty.unify(*ref_ty);
+
+                        self.exprs[index as usize].ty = new_ty;
+                        self.exprs[arg as usize].ty =
+                            Type::from_complex(ComplexType::Ref(new_ty, *ref_mut));
+
                         mutated = true;
                     }
                 }
@@ -177,7 +177,7 @@ impl FuncHIR {
                     self.exprs[index as usize].expr = Expr::BinOpPrimitive(lhs, op, rhs);
                     self.check_bin_op(index, lhs, op, rhs).set_mutated()
                 } else {
-                    panic!("todo more binary stuff {:?}", op);
+                    panic!("todo more binary stuff {:?} {:?} {:?}", lty,op,rty);
                 }
             }
 
@@ -406,11 +406,9 @@ impl FuncHIR {
         let arg2_ty = self.exprs[arg2 as usize].ty;
 
         let mutated = if arg1_ty != arg2_ty {
-            if arg1_ty.can_upgrade_to(arg2_ty) {
-                self.exprs[arg1 as usize].ty = arg2_ty;
-            } else {
-                self.exprs[arg2 as usize].ty = arg1_ty;
-            }
+            let new_ty = arg1_ty.unify(arg2_ty);
+            self.exprs[arg1 as usize].ty = new_ty;
+            self.exprs[arg2 as usize].ty = new_ty;
             true
         } else {
             false
@@ -447,11 +445,7 @@ impl FuncHIR {
     fn update_expr_type(&mut self, index: u32, ty: Type) -> bool {
         let old_ty = self.exprs[index as usize].ty;
         if ty != old_ty {
-            if old_ty.can_upgrade_to(ty) {
-                self.exprs[index as usize].ty = ty;
-            } else {
-                panic!("can not upgrade type");
-            }
+            self.exprs[index as usize].ty = old_ty.unify(ty);
             true
         } else {
             false

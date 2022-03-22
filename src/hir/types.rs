@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 
-use std::{collections::HashSet, sync::RwLock};
 use cranelift::prelude::types;
+use std::{collections::HashSet, sync::RwLock};
 
 use crate::PTR_WIDTH;
 
@@ -50,7 +50,7 @@ impl Signature {
 pub enum ComplexType {
     Ref(Type, bool),
     Ptr(Type, bool),
-    Tuple(Vec<Type>)
+    Tuple(Vec<Type>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -186,9 +186,7 @@ impl Type {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             Type::Complex(cpx) => match cpx {
                 ComplexType::Ref(t, _) | ComplexType::Ptr(t, _) => t.is_unknown(),
-                ComplexType::Tuple(fields) => {
-                    fields.iter().any(|x| x.is_unknown())
-                }
+                ComplexType::Tuple(fields) => fields.iter().any(|x| x.is_unknown()),
             },
         }
     }
@@ -297,51 +295,51 @@ impl Type {
             Type::Int(IntType::I16) | Type::Int(IntType::U16) => CType::Scalar(types::I16),
             Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Scalar(types::I8),
             Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Scalar(ptr_ty()),
-    
+
             // Floats
             Type::Float(FloatType::F64) => CType::Scalar(types::F64),
             Type::Float(FloatType::F32) => CType::Scalar(types::F32),
-    
+
             Type::Bool => CType::Scalar(types::B1),
             Type::Char => CType::Scalar(types::I32),
             Type::Void => CType::None,
             Type::Never => CType::Never,
-    
+
             // Refs and Pointers
             Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
             Type::Complex(ComplexType::Ptr(..)) => CType::Scalar(ptr_ty()),
-    
+
             _ => panic!("can't lower type {:?}", self),
         }
     }
 
-    pub fn can_upgrade_to(self, other: Type) -> bool {
+    pub fn unify(self, other: Type) -> Type {
         if self == other {
-            panic!("type equivilance should be checked before calling this");
+            panic!("check type equality before calling this")
         } else {
             match (self, other) {
-                (Type::Unknown, _) => true,
-                (_, Type::Unknown) => false,
+                (_, Type::Unknown) => self,
+                (Type::Unknown, _) => other,
 
-                (Type::IntUnknown, Type::Int(_)) => true,
-                (Type::Int(_), Type::IntUnknown) => false,
+                (Type::Int(_), Type::IntUnknown) => self,
+                (Type::IntUnknown, Type::Int(_)) => other,
 
-                (Type::FloatUnknown, Type::Float(_)) => true,
-                (Type::Float(_), Type::FloatUnknown) => false,
+                (Type::Float(_), Type::FloatUnknown) => self,
+                (Type::FloatUnknown, Type::Float(_)) => other,
 
                 // we do not want to downgrade never to unknown
                 // however, upgrading it to IntUnknown or FloatUnknown is fine
-                (Type::Never, x) if x != Type::Unknown => true,
-                (x, Type::Never) if x != Type::Unknown => false,
+                (x, Type::Never) if x != Type::Unknown => self,
+                (Type::Never, x) if x != Type::Unknown => other,
 
                 (
                     Type::Complex(ComplexType::Ref(t1, m1)),
                     Type::Complex(ComplexType::Ref(t2, m2)),
                 ) => {
                     assert_eq!(m1, m2);
-                    t1.can_upgrade_to(*t2)
+                    let unified = t1.unify(*t2);
+                    Type::from_complex(ComplexType::Ref(unified, *m1))
                 }
-
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
         }
@@ -355,15 +353,6 @@ impl Type {
             let res = Box::leak(Box::new(t));
             registry.lookup.insert(res);
             Type::Complex(res)
-        }
-    }
-
-    // get target type of ref -- REF ONLY
-    pub fn try_get_ref(self) -> Option<(Type, bool)> {
-        if let Type::Complex(ComplexType::Ref(ty, is_mut)) = self {
-            Some((*ty, *is_mut))
-        } else {
-            None
         }
     }
 }

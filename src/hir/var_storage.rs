@@ -1,6 +1,6 @@
 use super::{
     func::{Expr, FuncHIR},
-    types::{ComplexType, Type, CType},
+    types::{CType, ComplexType, Type},
 };
 
 #[derive(PartialEq, Debug)]
@@ -48,6 +48,6 @@ fn update_storage_for_ref(id: u32, input_fn: &FuncHIR, res: &mut Vec<PlaceKind>)
 fn storage_for_type(ty: Type) -> PlaceKind {
     match ty.lower() {
         CType::Never | CType::None => PlaceKind::None,
-        CType::Scalar(_) => PlaceKind::Register
+        CType::Scalar(_) => PlaceKind::Register,
     }
 }

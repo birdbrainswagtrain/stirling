@@ -238,11 +238,13 @@ impl Block {
                 let is_mut = mutability.is_some();
                 code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
             }
-            syn::Expr::Field(syn::ExprField{base,member,..}) => {
+            syn::Expr::Field(syn::ExprField { base, member, .. }) => {
                 let id_arg = self.add_expr(code, base);
                 match member {
-                    syn::Member::Named(name) => panic!("named indexing unsupported"),
-                    syn::Member::Unnamed(index) => code.push_expr(Expr::IndexTuple(id_arg, index.index), Type::Unknown)
+                    syn::Member::Named(_name) => panic!("named indexing unsupported"),
+                    syn::Member::Unnamed(index) => {
+                        code.push_expr(Expr::IndexTuple(id_arg, index.index), Type::Unknown)
+                    }
                 }
             }
             syn::Expr::Assign(syn::ExprAssign { left, right, .. }) => {
@@ -308,9 +310,8 @@ impl Block {
                 if elems.len() == 0 {
                     code.push_expr(Expr::LitVoid, Type::Void)
                 } else {
-                    let fields: Vec<_> = elems.iter().map(|elem| {
-                        self.add_expr(code, elem)
-                    }).collect();
+                    let fields: Vec<_> =
+                        elems.iter().map(|elem| self.add_expr(code, elem)).collect();
                     code.push_expr(Expr::NewTuple(fields), Type::Unknown)
                 }
             }
@@ -407,7 +408,7 @@ pub enum Expr {
     UnOpPrimitive(u32, syn::UnOp),
     Ref(u32, bool), // 2nd value indicates mutability
     DeRef(u32),
-    IndexTuple(u32,u32), // 2nd value indicates index
+    IndexTuple(u32, u32), // 2nd value indicates index
     LitInt(u128),
     LitFloat(f64),
     LitBool(bool),

@@ -20,7 +20,7 @@ use crate::builtin::BUILTINS;
 use crate::disassemble::disassemble;
 use crate::hir::func::{Block, Expr, ExprInfo, FuncHIR};
 use crate::hir::item::Function;
-use crate::hir::types::{ComplexType, FloatType, IntType, Signature, Type, CType, ptr_ty};
+use crate::hir::types::{ptr_ty, CType, ComplexType, FloatType, IntType, Signature, Type};
 use crate::hir::var_storage::{get_var_storage, PlaceKind};
 use crate::profiler::profile;
 use crate::PTR_WIDTH;
@@ -404,8 +404,17 @@ impl<'a> JITFunc<'a> {
 
                 let arg = self.lower_expr(*arg)?.unwrap_scalar();
 
-                if (src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Char || src_ty == Type::Bool) && ty.is_int() {
-                    let arg = if src_ty == Type::Bool { self.fn_builder.ins().bint(types::I8,arg) } else { arg };
+                if (src_ty.is_int()
+                    || src_ty.is_ptr()
+                    || src_ty == Type::Char
+                    || src_ty == Type::Bool)
+                    && ty.is_int()
+                {
+                    let arg = if src_ty == Type::Bool {
+                        self.fn_builder.ins().bint(types::I8, arg)
+                    } else {
+                        arg
+                    };
                     let size_src = src_ty.byte_size();
                     let size_dest = ty.byte_size();
 

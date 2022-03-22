@@ -12,7 +12,7 @@ use profiler::{profile, profile_log};
 
 const PTR_WIDTH: usize = 8;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 const LOG_JITS: bool = false;
 
 fn main() {
