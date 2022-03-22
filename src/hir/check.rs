@@ -117,9 +117,6 @@ impl FuncHIR {
                     self.exprs[index as usize].ty =
                         Type::from_complex(ComplexType::Ref(new_ty, is_mut));
 
-                    let r1 = !self.exprs[index as usize].ty.is_unknown();
-                    let r2 = !self.exprs[arg as usize].ty.is_unknown();
-
                     CheckResult {
                         mutated: true,
                         resolved: !new_ty.is_unknown(),

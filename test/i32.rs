@@ -35,9 +35,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a+b) as i64);
                 j += 1;
             }
@@ -54,9 +51,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a-b) as i64);
                 j += 1;
             }
@@ -73,9 +67,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a*b) as i64);
                 j += 1;
             }
@@ -96,9 +87,6 @@ fn main() {
                     j += 1;
                     continue;
                 }
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a/b) as i64);
                 j += 1;
             }
@@ -119,9 +107,6 @@ fn main() {
                     j += 1;
                     continue;
                 }
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a/b) as i64);
                 j += 1;
             }
@@ -138,9 +123,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a|b) as i64);
                 j += 1;
             }
@@ -157,9 +139,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a&b) as i64);
                 j += 1;
             }
@@ -176,9 +155,6 @@ fn main() {
             while j < 7 {
                 let a = get_n(i);
                 let b = get_n(j);
-                _skitter_builtin::print_header(a as i64);
-                _skitter_builtin::print_header(op as i64);
-                _skitter_builtin::print_header(b as i64);
                 _skitter_builtin::print_i64((a^b) as i64);
                 j += 1;
             }
