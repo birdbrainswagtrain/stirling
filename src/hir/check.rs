@@ -127,8 +127,7 @@ impl FuncHIR {
                 let arg_ty = self.exprs[arg as usize].ty;
                 let mut mutated = false;
                 // deref can be overridden, so we can't just assume the arg type is a ref
-                if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) = arg_ty
-                {
+                if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) = arg_ty {
                     if info.ty != *ref_ty {
                         let new_ty = info.ty.unify(*ref_ty);
 
@@ -174,7 +173,7 @@ impl FuncHIR {
                     self.exprs[index as usize].expr = Expr::BinOpPrimitive(lhs, op, rhs);
                     self.check_bin_op(index, lhs, op, rhs).set_mutated()
                 } else {
-                    panic!("todo more binary stuff {:?} {:?} {:?}", lty,op,rty);
+                    panic!("todo more binary stuff {:?} {:?} {:?}", lty, op, rty);
                 }
             }
 

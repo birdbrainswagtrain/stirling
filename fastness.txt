@@ -1,4 +1,7 @@
 
+Rust-Analyzer has a faster parser which is probably worth switching to.
+Considered using it as a front and middle-end but it seems like more trouble than worth.
+
 Consider alternative codegen backends? https://github.com/vnmakarov/mir
 Consider building / using a baseline VM? https://github.com/assyrianic/Tagha
 

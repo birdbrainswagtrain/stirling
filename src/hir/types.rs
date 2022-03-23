@@ -284,6 +284,10 @@ impl Type {
         }
     }
 
+    pub fn byte_align(&self) -> usize {
+        self.byte_size()
+    }
+
     pub fn lower(&self) -> CType {
         match self {
             // Ints

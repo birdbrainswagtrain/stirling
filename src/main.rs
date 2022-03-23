@@ -3,17 +3,20 @@ mod disassemble;
 mod hir;
 mod jit;
 mod profiler;
+mod vm;
 
 use crate::hir::item::{Function, Item, ItemName, Scope};
 use crate::jit::jit_compile;
 
 use memoffset::offset_of;
 use profiler::{profile, profile_log};
+use vm::exec;
 
 const PTR_WIDTH: usize = 8;
 
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 const LOG_JITS: bool = false;
+const USE_VM: bool = true;
 
 fn main() {
     check_abi();
@@ -31,16 +34,19 @@ fn main() {
     let module = Scope::from_syn_file(syn_tree);
     let module = module.borrow();
 
-    let compiled_main = if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap()
-    {
-        jit_compile(func);
+    if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap() {
+        if USE_VM {
+            let res = exec(func,&[5,10]);
+            println!("res = {}",res);
+        } else {
+            jit_compile(func);
 
-        unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) }
+            let compiled_main = unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) };
+            profile("exec",|| compiled_main());
+        }
     } else {
         panic!("can't find main");
     };
-
-    compiled_main();
 
     profile_log();
 }
