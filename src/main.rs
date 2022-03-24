@@ -14,7 +14,7 @@ use vm::exec;
 
 const PTR_WIDTH: usize = 8;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
 
@@ -36,13 +36,13 @@ fn main() {
 
     if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap() {
         if USE_VM {
-            let res = exec(func,&[5,10]);
-            println!("res = {}",res);
+            let res = exec(func, &[5, 10]);
+            println!("res = {}", res);
         } else {
             jit_compile(func);
 
             let compiled_main = unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) };
-            profile("exec",|| compiled_main());
+            profile("exec", || compiled_main());
         }
     } else {
         panic!("can't find main");

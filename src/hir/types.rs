@@ -274,6 +274,7 @@ impl Type {
 
             Type::Char => 4,
             Type::Bool => 1,
+            Type::Void => 0,
 
             Type::Int(IntType::ISize)
             | Type::Int(IntType::USize)
