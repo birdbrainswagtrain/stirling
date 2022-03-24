@@ -28,12 +28,13 @@ impl FrameAllocator {
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
+#[repr(u32)]
 enum Instr {
-    // out = n
+    // out = const
     I32_Const(u32, i32),
-    // out = src
+    // out = i32
     Mov4(u32, u32),
-    // out = lhs <op> rhs
+    // out = i32 <op> i32
     I32_Add(u32, u32, u32),
     I32_S_Lt(u32, u32, u32),
     // offset [cond slot]
@@ -44,80 +45,74 @@ enum Instr {
     Bad,
 }
 
-unsafe fn set_i32(base: *mut u8, offset: u32, n: i32) {
-    *(base.add(offset as usize) as *mut _) = n;
-}
-
-unsafe fn get_i32(base: *mut u8, offset: u32) -> i32 {
-    *(base.add(offset as usize) as *mut _)
-}
-
-unsafe fn set_bool(base: *mut u8, offset: u32, n: bool) {
-    *(base.add(offset as usize) as *mut _) = n;
-}
-
-unsafe fn get_bool(base: *mut u8, offset: u32) -> bool {
-    *(base.add(offset as usize) as *mut _)
-}
-
 pub fn exec(func: &Function, args: &[i32]) -> i32 {
     let code = compile(func);
-    let stack: Vec<u128> = vec![0, 1024];
-    profile("exec", || exec_actual(args, code, stack))
-}
-
-#[inline(never)]
-fn exec_actual(args: &[i32], code: Vec<Instr>, mut stack: Vec<u128>) -> i32 {
+    let mut stack: Vec<u128> = vec![0, 1024];
+    let stack = stack.as_mut_ptr() as *mut u8;
     unsafe {
-        let stack = stack.as_mut_ptr() as *mut u8;
-
-        let mut pc = 0;
-
         // jank arg setup
         for (i, arg) in args.iter().enumerate() {
-            set_i32(stack, (4 + i * 4) as u32, *arg);
+            write_stack(stack, (4 + i * 4) as u32, *arg);
         }
+        //profile("exec", || exec_rust(code, stack))
+        profile("exec", || exec_rust(code, stack))
+    }
+}
 
-        loop {
-            let instr = code[pc]; //*code.get_unchecked(pc);// [pc];
-            match instr {
-                Instr::Mov4(out, src) => {
-                    let x = get_i32(stack, src);
-                    set_i32(stack, out, x);
-                }
-                Instr::I32_Add(out, lhs, rhs) => {
-                    let x = get_i32(stack, lhs) + get_i32(stack, rhs);
-                    set_i32(stack, out, x);
-                }
-                Instr::I32_S_Lt(out, lhs, rhs) => {
-                    //let a = get_i32(stack, lhs);
-                    //let b = get_i32(stack, rhs);
-                    let x = get_i32(stack, lhs) < get_i32(stack, rhs);
-                    set_bool(stack, out, x);
-                }
-                Instr::I32_Const(out, n) => {
-                    set_i32(stack, out, n);
-                }
-                Instr::JumpF(offset, cond) => {
-                    let x = get_bool(stack, cond);
-                    if !x {
-                        pc = (pc as isize + offset as isize) as usize;
-                        continue;
-                    }
-                }
-                Instr::Jump(offset) => {
+unsafe fn write_stack<T>(base: *mut u8, offset: u32, x: T) {
+    *(base.add(offset as usize) as *mut _) = x;
+}
+
+unsafe fn read_stack<T: Copy>(base: *mut u8, offset: u32) -> T {
+    *(base.add(offset as usize) as *mut _)
+}
+
+unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) -> i32 {
+
+    let mut pc = 0;
+
+    loop {
+        let instr = code[pc]; //*code.get_unchecked(pc);// [pc];
+        match instr {
+            Instr::Mov4(out, src) => {
+                let x: i32 = read_stack(stack, src);
+                write_stack(stack, out, x);
+            }
+            Instr::I32_Add(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: i32 = a.wrapping_add(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_S_Lt(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: bool = a < b;
+                write_stack(stack, out, res);
+            }
+            Instr::I32_Const(out, n) => {
+                write_stack(stack, out, n as i32);
+            }
+            Instr::JumpF(offset, cond) => {
+                let x: bool = read_stack(stack, cond);
+                if !x {
                     pc = (pc as isize + offset as isize) as usize;
                     continue;
                 }
-                Instr::Return => break,
-                _ => panic!("todo execute {:?}", instr),
             }
-            pc += 1;
+            Instr::Jump(offset) => {
+                pc = (pc as isize + offset as isize) as usize;
+                continue;
+            }
+            Instr::Return => break,
+            _ => panic!("todo execute {:?}", instr),
         }
-
-        // jank returns
-        get_i32(stack, 0)
+        pc += 1;
     }
+
+    // jank returns
+    let res: i32 = read_stack(stack, 0);
+    res
 }
 
 fn compile(func: &Function) -> Vec<Instr> {
@@ -135,14 +130,11 @@ fn compile(func: &Function) -> Vec<Instr> {
             None => (),
         }
 
-        let var_map: Vec<_> = input_fn
-            .vars
-            .iter()
-            .map(|var| {
-                let ty = input_fn.exprs[*var as usize].ty;
-                frame.alloc(ty)
-            })
-            .collect();
+        let mut var_map = vec!(None; input_fn.vars.len());
+        
+        for (i,input) in sig.inputs.iter().enumerate() {
+            var_map[i] = frame.alloc(*input);
+        }
 
         let mut compiler = BCompiler {
             var_map,
@@ -207,6 +199,16 @@ impl<'a> BCompiler<'a> {
                     mandatory_dest_slot
                 }
             }
+            Expr::DeclVar(id) => {
+                assert!(mandatory_dest_slot.is_none());
+                let var_info = &self.input_fn.exprs[*id as usize];
+                if let Expr::Var(var_index) = var_info.expr {
+                    self.var_map[var_index as usize] = self.frame.alloc(var_info.ty);
+                    return None;
+                } else {
+                    panic!("bad var decl");
+                }
+            }
             Expr::Assign(dest, src) => {
                 assert!(mandatory_dest_slot.is_none());
                 let dest_expr = &self.input_fn.exprs[*dest as usize].expr;
@@ -216,6 +218,7 @@ impl<'a> BCompiler<'a> {
                 } else {
                     panic!("non-trivial assign");
                 }
+                self.frame = saved_frame; // reset stack
                 None
             }
             Expr::LitInt(n) => {
@@ -263,7 +266,7 @@ impl<'a> BCompiler<'a> {
             }
             _ => panic!("vm compile {:?}", expr),
         };
-        self.frame = saved_frame;
+        //self.frame = saved_frame;
         if mandatory_dest_slot.is_some() {
             assert_eq!(mandatory_dest_slot,res_slot);
         }

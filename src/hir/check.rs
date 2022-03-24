@@ -86,6 +86,7 @@ impl FuncHIR {
             | Expr::LitChar(_)
             | Expr::LitBool(_)
             | Expr::LitVoid
+            | Expr::DeclVar(_)
             | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {

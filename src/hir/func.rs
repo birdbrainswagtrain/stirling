@@ -199,6 +199,8 @@ impl Block {
                         .borrow_mut()
                         .declare(ItemName::Value(name), Item::Local(var_id));
 
+                    self.stmts.push(code.push_expr(Expr::DeclVar(var_id),Type::Void));
+
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
                         let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Void);
@@ -402,6 +404,7 @@ pub enum Expr {
     //DeclArg(u32),
     Block(Box<Block>),
     Var(u32),
+    DeclVar(u32),
     BinOp(u32, syn::BinOp, u32),
     BinOpPrimitive(u32, syn::BinOp, u32),
     UnOp(u32, syn::UnOp),
