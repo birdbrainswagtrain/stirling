@@ -663,6 +663,7 @@ impl<'a> JITFunc<'a> {
             }
             Expr::LitBool(x) => CVal::Scalar(self.fn_builder.ins().bconst(cty.unwrap_scalar(), *x)),
             Expr::LitVoid => CVal::None,
+            Expr::DeclVar(_) => CVal::None,
 
             Expr::Ref(x, _is_mut) => {
                 let place = self.lower_place(*x)?;

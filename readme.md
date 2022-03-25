@@ -4,7 +4,7 @@
 ## Features
 
 ### Interpreter
-- i32: Literals, arithmetic
+- i32: Literals, arithmetic, bitwise, comparisons.
 
 ### Types
 - **Integers** *(excluding i128 / u128)*: Literals, arithmetic, bitwise, comparisons.
