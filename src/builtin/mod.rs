@@ -15,36 +15,42 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
         ),
     );
     m.insert(
+        "print_i32",
+        (
+            builtin::print_i32 as _,
+            Signature::new(vec![Type::Int(IntType::I32)], Type::Void),
+        ),
+    );
+    /*m.insert(
         "print_i64",
         (
-            _builtin::print_i64 as _,
+            builtin::print_i64 as _,
             Signature::new(vec![Type::Int(IntType::I64)], Type::Void),
         ),
     );
     m.insert(
         "assert",
         (
-            _builtin::assert as _,
+            builtin::assert as _,
             Signature::new(vec![Type::Int(IntType::I32), Type::Bool], Type::Void),
         ),
     );
     m.insert(
         "print_f64",
         (
-            _builtin::print_f64 as _,
+            builtin::print_f64 as _,
             Signature::new(vec![Type::Float(FloatType::F64)], Type::Void),
         ),
     );
     m.insert(
         "print_char",
         (
-            _builtin::print_char as _,
+            builtin::print_char as _,
             Signature::new(vec![Type::Char], Type::Void),
         ),
-    );
+    );*/
     m
 });
 
-mod _builtin {
-    include!("../test/_skitter_builtin.rs");
-}
+mod builtin;
+pub use builtin::*;

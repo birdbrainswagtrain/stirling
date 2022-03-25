@@ -1,21 +1,17 @@
-===> Ziz
+cargo build --release && time ../target/release/stirling ./add.rs
 
-cargo build --release && time ./target/release/skitter
+PROFILE RESULTS:
+    parse                266.7µs
+    exec                 261.2µs
+    load source          11.7µs
+    lower AST -> HIR     7.7µs
+    type check           4.6µs
+    lower HIR -> BC      2.5µs
 
-jit     0m4.582s
+real    0m0.002s
 
-===> rustc debug
+===================
 
-time rustc add.rs
-time ./add
+time runner add.rs
 
-build    0m0.259s
-exec     0m9.057s
-
-===> rustc release
-
-time rustc add.rs -O
-time ./add
-
-build    0m0.255s
-exec     0m1.148s
+real    0m0.259s

@@ -1,8 +1,10 @@
-# Skitter
+# Stirling
 
 > Experimental JIT for a primitive subset of Rust
-
 ## Features
+
+### Interpreter
+- i32: Literals, arithmetic
 
 ### Types
 - **Integers** *(excluding i128 / u128)*: Literals, arithmetic, bitwise, comparisons.

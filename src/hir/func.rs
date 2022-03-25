@@ -139,7 +139,7 @@ fn path_to_name(path: &syn::Path) -> Option<String> {
 fn path_to_builtin(path: &syn::Path) -> Option<String> {
     if path.segments.len() == 2 {
         let p1 = path.segments[0].ident.to_string();
-        if p1 == "_skitter_builtin" {
+        if p1 == "_builtin" {
             let p2 = path.segments[1].ident.to_string();
             return Some(p2);
         }

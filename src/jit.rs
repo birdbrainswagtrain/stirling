@@ -132,7 +132,7 @@ impl JIT {
 
         self.ctx.func.signature = lower_sig(sig);
 
-        let fn_name = format!("skitter_{}", func as *const Function as usize);
+        let fn_name = format!("stirling_{}", func as *const Function as usize);
         let fn_id = self
             .module
             .declare_function(&fn_name, Linkage::Export, &self.ctx.func.signature)

@@ -36,6 +36,11 @@ enum Instr {
     Mov4(u32, u32),
     // out = i32 <op> i32
     I32_Add(u32, u32, u32),
+    I32_Sub(u32, u32, u32),
+    I32_Mul(u32, u32, u32),
+    
+    I32_S_Div(u32, u32, u32),
+    I32_S_Rem(u32, u32, u32),
     I32_S_Lt(u32, u32, u32),
     // offset [cond slot]
     Jump(i32),
@@ -43,17 +48,14 @@ enum Instr {
     // no args
     Return,
     Bad,
+    BuiltIn_print_i32(u32)
 }
 
-pub fn exec(func: &Function, args: &[i32]) -> i32 {
+pub fn exec(func: &Function) {
     let code = compile(func);
     let mut stack: Vec<u128> = vec![0, 1024];
     let stack = stack.as_mut_ptr() as *mut u8;
     unsafe {
-        // jank arg setup
-        for (i, arg) in args.iter().enumerate() {
-            write_stack(stack, (4 + i * 4) as u32, *arg);
-        }
         //profile("exec", || exec_rust(code, stack))
         profile("exec", || exec_rust(code, stack))
     }
@@ -67,7 +69,7 @@ unsafe fn read_stack<T: Copy>(base: *mut u8, offset: u32) -> T {
     *(base.add(offset as usize) as *mut _)
 }
 
-unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) -> i32 {
+unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) {
 
     let mut pc = 0;
 
@@ -82,6 +84,30 @@ unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) -> i32 {
                 let a: i32 = read_stack(stack, lhs);
                 let b: i32 = read_stack(stack, rhs);
                 let res: i32 = a.wrapping_add(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_Sub(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: i32 = a.wrapping_sub(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_Mul(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: i32 = a.wrapping_mul(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_S_Div(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: i32 = a.wrapping_div(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_S_Rem(out, lhs, rhs) => {
+                let a: i32 = read_stack(stack, lhs);
+                let b: i32 = read_stack(stack, rhs);
+                let res: i32 = a.wrapping_rem(b);
                 write_stack(stack, out, res);
             }
             Instr::I32_S_Lt(out, lhs, rhs) => {
@@ -104,15 +130,16 @@ unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) -> i32 {
                 pc = (pc as isize + offset as isize) as usize;
                 continue;
             }
+            Instr::Bad => panic!("encountered bad instruction"),
             Instr::Return => break,
-            _ => panic!("todo execute {:?}", instr),
+            Instr::BuiltIn_print_i32(arg) => {
+                let arg: i32 = read_stack(stack, arg);
+                crate::builtin::print_i32(arg);
+            }
+            //_ => panic!("todo execute {:?}", instr),
         }
         pc += 1;
     }
-
-    // jank returns
-    let res: i32 = read_stack(stack, 0);
-    res
 }
 
 fn compile(func: &Function) -> Vec<Instr> {
@@ -164,6 +191,11 @@ struct BCompiler<'a> {
 fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> fn(u32, u32, u32) -> Instr {
     match (op, arg_ty) {
         (syn::BinOp::Add(_), Type::Int(IntType::I32)) => Instr::I32_Add,
+        (syn::BinOp::Sub(_), Type::Int(IntType::I32)) => Instr::I32_Sub,
+        (syn::BinOp::Mul(_), Type::Int(IntType::I32)) => Instr::I32_Mul,
+
+        (syn::BinOp::Div(_), Type::Int(IntType::I32)) => Instr::I32_S_Div,
+        (syn::BinOp::Rem(_), Type::Int(IntType::I32)) => Instr::I32_S_Rem,
         (syn::BinOp::Lt(_), Type::Int(IntType::I32)) => Instr::I32_S_Lt,
         _ => panic!("todo prim-op {:?} {:?}", op, arg_ty),
     }
@@ -244,6 +276,16 @@ impl<'a> BCompiler<'a> {
                 let ins = ins_ctor(dest_slot.unwrap(), l_slot, r_slot);
                 self.push_code(ins);
                 dest_slot
+            }
+            Expr::CallBuiltin(name, args) => {
+                if name == "print_i32" {
+                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    self.frame = saved_frame; // args ready, reset stack
+                    self.push_code(Instr::BuiltIn_print_i32(arg_slot));
+                    None
+                } else {
+                    panic!("unknown builtin");
+                }
             }
             Expr::Block(block) => {
                 self.lower_block(block, mandatory_dest_slot)
