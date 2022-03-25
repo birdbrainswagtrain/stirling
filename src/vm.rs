@@ -53,6 +53,11 @@ enum Instr {
     I32_S_Rem(u32, u32, u32),
     I32_S_Lt(u32, u32, u32),
     I32_S_LtEq(u32, u32, u32),
+
+    I32_U_Div(u32, u32, u32),
+    I32_U_Rem(u32, u32, u32),
+    I32_U_Lt(u32, u32, u32),
+    I32_U_LtEq(u32, u32, u32),
     // offset [cond slot]
     Jump(i32),
     JumpF(i32, u32),
@@ -60,6 +65,7 @@ enum Instr {
     Return,
     Bad,
     BuiltIn_print_i32(u32),
+    BuiltIn_print_u32(u32),
     BuiltIn_print_bool(u32)
 }
 
@@ -162,6 +168,30 @@ unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) {
                 let res: bool = a <= b;
                 write_stack(stack, out, res);
             }
+            Instr::I32_U_Div(out, lhs, rhs) => {
+                let a: u32 = read_stack(stack, lhs);
+                let b: u32 = read_stack(stack, rhs);
+                let res: u32 = a.wrapping_div(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_U_Rem(out, lhs, rhs) => {
+                let a: u32 = read_stack(stack, lhs);
+                let b: u32 = read_stack(stack, rhs);
+                let res: u32 = a.wrapping_rem(b);
+                write_stack(stack, out, res);
+            }
+            Instr::I32_U_Lt(out, lhs, rhs) => {
+                let a: u32 = read_stack(stack, lhs);
+                let b: u32 = read_stack(stack, rhs);
+                let res: bool = a < b;
+                write_stack(stack, out, res);
+            }
+            Instr::I32_U_LtEq(out, lhs, rhs) => {
+                let a: u32 = read_stack(stack, lhs);
+                let b: u32 = read_stack(stack, rhs);
+                let res: bool = a <= b;
+                write_stack(stack, out, res);
+            }
             Instr::Eq4(out, lhs, rhs) => {
                 let a: i32 = read_stack(stack, lhs);
                 let b: i32 = read_stack(stack, rhs);
@@ -193,6 +223,10 @@ unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) {
             Instr::BuiltIn_print_i32(arg) => {
                 let arg: i32 = read_stack(stack, arg);
                 crate::builtin::print_i32(arg);
+            },
+            Instr::BuiltIn_print_u32(arg) => {
+                let arg: u32 = read_stack(stack, arg);
+                crate::builtin::print_u32(arg);
             },
             Instr::BuiltIn_print_bool(arg) => {
                 let arg: bool = read_stack(stack, arg);
@@ -252,16 +286,16 @@ struct BCompiler<'a> {
 
 fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr,bool) {
     match (op, arg_ty) {
-        (syn::BinOp::Add(_), Type::Int(IntType::I32)) => (Instr::I32_Add,false),
-        (syn::BinOp::Sub(_), Type::Int(IntType::I32)) => (Instr::I32_Sub,false),
-        (syn::BinOp::Mul(_), Type::Int(IntType::I32)) => (Instr::I32_Mul,false),
+        (syn::BinOp::Add(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Add,false),
+        (syn::BinOp::Sub(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Sub,false),
+        (syn::BinOp::Mul(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Mul,false),
 
-        (syn::BinOp::BitOr(_), Type::Int(IntType::I32)) => (Instr::I32_Or,false),
-        (syn::BinOp::BitAnd(_), Type::Int(IntType::I32)) => (Instr::I32_And,false),
-        (syn::BinOp::BitXor(_), Type::Int(IntType::I32)) => (Instr::I32_Xor,false),
+        (syn::BinOp::BitOr(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Or,false),
+        (syn::BinOp::BitAnd(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_And,false),
+        (syn::BinOp::BitXor(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Xor,false),
 
-        (syn::BinOp::Eq(_), Type::Int(IntType::I32)) => (Instr::Eq4,false),
-        (syn::BinOp::Ne(_), Type::Int(IntType::I32)) => (Instr::NotEq4,false),
+        (syn::BinOp::Eq(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::Eq4,false),
+        (syn::BinOp::Ne(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::NotEq4,false),
 
         // sign-dependant
         (syn::BinOp::Div(_), Type::Int(IntType::I32)) => (Instr::I32_S_Div,false),
@@ -270,6 +304,13 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
         (syn::BinOp::Le(_), Type::Int(IntType::I32)) => (Instr::I32_S_LtEq,false),
         (syn::BinOp::Gt(_), Type::Int(IntType::I32)) => (Instr::I32_S_Lt,true),
         (syn::BinOp::Ge(_), Type::Int(IntType::I32)) => (Instr::I32_S_LtEq,true),
+
+        (syn::BinOp::Div(_), Type::Int(IntType::U32)) => (Instr::I32_U_Div,false),
+        (syn::BinOp::Rem(_), Type::Int(IntType::U32)) => (Instr::I32_U_Rem,false),
+        (syn::BinOp::Lt(_), Type::Int(IntType::U32)) => (Instr::I32_U_Lt,false),
+        (syn::BinOp::Le(_), Type::Int(IntType::U32)) => (Instr::I32_U_LtEq,false),
+        (syn::BinOp::Gt(_), Type::Int(IntType::U32)) => (Instr::I32_U_Lt,true),
+        (syn::BinOp::Ge(_), Type::Int(IntType::U32)) => (Instr::I32_U_LtEq,true),
         _ => panic!("todo bin-op {:?} {:?}", op, arg_ty),
     }
 }
@@ -278,6 +319,7 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32,u32) -> Instr {
     match (op,ty) {
         (syn::UnOp::Neg(_), Type::Int(IntType::I32)) => Instr::I32_Neg,
         (syn::UnOp::Not(_), Type::Int(IntType::I32)) => Instr::I32_Not,
+        (syn::UnOp::Not(_), Type::Int(IntType::U32)) => Instr::I32_Not,
         _ => panic!("todo un-op {:?} {:?}",op,ty)
     }
 }
@@ -377,6 +419,11 @@ impl<'a> BCompiler<'a> {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_i32(arg_slot));
+                    None
+                } else if name == "print_u32" {
+                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    self.frame = saved_frame; // args ready, reset stack
+                    self.push_code(Instr::BuiltIn_print_u32(arg_slot));
                     None
                 } else if name == "print_bool" {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();

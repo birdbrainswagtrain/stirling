@@ -22,6 +22,13 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
         ),
     );
     m.insert(
+        "print_u32",
+        (
+            builtin::print_u32 as _,
+            Signature::new(vec![Type::Int(IntType::U32)], Type::Void),
+        ),
+    );
+    m.insert(
         "print_bool",
         (
             builtin::print_bool as _,
