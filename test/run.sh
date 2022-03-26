@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 bin_name=$(mktemp)
 rustc $1 -o $bin_name -C overflow-checks=off
 $bin_name

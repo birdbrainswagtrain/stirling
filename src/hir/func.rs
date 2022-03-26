@@ -199,7 +199,8 @@ impl Block {
                         .borrow_mut()
                         .declare(ItemName::Value(name), Item::Local(var_id));
 
-                    self.stmts.push(code.push_expr(Expr::DeclVar(var_id),Type::Void));
+                    self.stmts
+                        .push(code.push_expr(Expr::DeclVar(var_id), Type::Void));
 
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);

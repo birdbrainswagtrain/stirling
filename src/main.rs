@@ -17,6 +17,7 @@ const PTR_WIDTH: usize = 8;
 const VERBOSE: bool = false;
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
+const PROFILE: bool = false;
 
 fn main() {
     check_abi();
@@ -47,7 +48,9 @@ fn main() {
         panic!("can't find main");
     };
 
-    profile_log();
+    if PROFILE {
+        profile_log();
+    }
 }
 
 fn check_abi() {

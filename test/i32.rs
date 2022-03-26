@@ -16,6 +16,10 @@ pub fn main() {
         _builtin::print_i32(x & y);
         _builtin::print_i32(x | y);
         _builtin::print_i32(x ^ y);
+        _builtin::print_i32(x >> 4);
+        _builtin::print_i32(y >> 4);
+        _builtin::print_i32(x << 4);
+        _builtin::print_i32(y << 4);
     
         _builtin::print_bool(x == y);
         _builtin::print_bool(x != y);
@@ -39,6 +43,10 @@ pub fn main() {
         _builtin::print_u32(x & y);
         _builtin::print_u32(x | y);
         _builtin::print_u32(x ^ y);
+        _builtin::print_u32(x >> 4);
+        _builtin::print_u32(y >> 4);
+        _builtin::print_u32(x << 4);
+        _builtin::print_u32(y << 4);
     
         _builtin::print_bool(x == y);
         _builtin::print_bool(x != y);

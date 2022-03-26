@@ -1,0 +1,161 @@
+match instr {
+    Instr::I32_Const(out, x) => {
+        let res: i32 = x;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Mov(out, src) => {
+        let x: i32 = read_stack(stack, src);
+        let res = x;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Neg(out, src) => {
+        let x: i32 = read_stack(stack, src);
+        let res = x.wrapping_neg();
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Not(out, src) => {
+        let x: i32 = read_stack(stack, src);
+        let res = !x;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Eq(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a == b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_NotEq(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a != b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Add(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a.wrapping_add(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Sub(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a.wrapping_sub(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Mul(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a.wrapping_mul(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Or(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a | b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_And(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a & b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_Xor(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a ^ b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_ShiftL(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a << b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_Lt(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_LtEq(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_Div(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_Rem(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: i32 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_ShiftR(out, lhs, rhs) => {
+        let a: i32 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a >> b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_Lt(out, lhs, rhs) => {
+        let a: u32 = read_stack(stack, lhs);
+        let b: u32 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_LtEq(out, lhs, rhs) => {
+        let a: u32 = read_stack(stack, lhs);
+        let b: u32 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_Div(out, lhs, rhs) => {
+        let a: u32 = read_stack(stack, lhs);
+        let b: u32 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_Rem(out, lhs, rhs) => {
+        let a: u32 = read_stack(stack, lhs);
+        let b: u32 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_ShiftR(out, lhs, rhs) => {
+        let a: u32 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a >> b;
+        write_stack(stack, out, res);
+    }
+    Instr::JumpF(offset, cond) => {
+        let x: bool = read_stack(stack, cond);
+        if !x {
+            pc = (pc as isize + offset as isize) as usize;
+            continue;
+        }
+    }
+    Instr::Jump(offset) => {
+        pc = (pc as isize + offset as isize) as usize;
+        continue;
+    }
+    Instr::Bad => panic!("encountered bad instruction"),
+    Instr::Return => break,
+    Instr::BuiltIn_print_i32(arg) => {
+        let arg: i32 = read_stack(stack, arg);
+        crate::builtin::print_i32(arg);
+    }
+    Instr::BuiltIn_print_u32(arg) => {
+        let arg: u32 = read_stack(stack, arg);
+        crate::builtin::print_u32(arg);
+    }
+    Instr::BuiltIn_print_bool(arg) => {
+        let arg: bool = read_stack(stack, arg);
+        crate::builtin::print_bool(arg);
+    }
+    _ => panic!("NYI {:?}",instr)
+}
