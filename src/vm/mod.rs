@@ -241,7 +241,7 @@ impl<'a> BCompiler<'a> {
                     panic!("unknown builtin");
                 }
             }
-            Expr::Block(block) => self.lower_block(block, mandatory_dest_slot),
+            Expr::Block(block) => self.lower_block(block,*ty, mandatory_dest_slot),
             Expr::While(cond, body) => {
                 assert!(mandatory_dest_slot.is_none());
                 let pc_start = self.code.len() as i32;
@@ -250,7 +250,7 @@ impl<'a> BCompiler<'a> {
                 let pc_cond_jump = self.code.len();
                 self.frame = saved_frame; // cond_read, reset stack
                 self.push_code(Instr::Bad);
-                let block_res = self.lower_block(body, None);
+                let block_res = self.lower_block(body,Type::Void, None);
                 assert!(block_res.is_none());
                 let pc_end = self.code.len() as i32;
                 self.push_code(Instr::Jump(pc_start - pc_end));
@@ -268,16 +268,20 @@ impl<'a> BCompiler<'a> {
         res_slot
     }
 
-    fn lower_block(&mut self, block: &Block, dest_slot: Option<u32>) -> Option<u32> {
+    fn lower_block(&mut self, block: &Block, ty: Type, mandatory_dest_slot: Option<u32>) -> Option<u32> {
+
+        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(ty));
+
+        let saved_frame = self.frame;
         for expr_id in &block.stmts {
             self.lower_expr(*expr_id, None);
         }
 
         if let Some(expr_id) = &block.result {
-            self.lower_expr(*expr_id, dest_slot)
-        } else {
-            None
+            self.lower_expr(*expr_id, dest_slot);
         }
+        self.frame = saved_frame;
+        dest_slot
     }
 
     fn insert_move(&mut self, dest: u32, src: u32, ty: Type) {

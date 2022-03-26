@@ -12,6 +12,7 @@ pub struct FuncHIR {
     break_index: Vec<(u32, Option<String>)>,
 }
 
+#[derive(Debug)]
 pub struct ExprInfo {
     pub expr: Expr,
     pub ty: Type,

@@ -174,7 +174,11 @@ impl FuncHIR {
                     self.exprs[index as usize].expr = Expr::BinOpPrimitive(lhs, op, rhs);
                     self.check_bin_op(index, lhs, op, rhs).set_mutated()
                 } else {
-                    panic!("todo more binary stuff {:?} {:?} {:?}", lty, op, rty);
+                    //panic!("todo more binary stuff {:?} {:?} {:?}", lty, op, rty);
+                    CheckResult {
+                        mutated: false,
+                        resolved: false
+                    }
                 }
             }
 
