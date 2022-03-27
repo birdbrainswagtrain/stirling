@@ -177,7 +177,7 @@ impl FuncHIR {
                     //panic!("todo more binary stuff {:?} {:?} {:?}", lty, op, rty);
                     CheckResult {
                         mutated: false,
-                        resolved: false
+                        resolved: false,
                     }
                 }
             }

@@ -1,8 +1,8 @@
-pub extern "C" fn print_i32(x: i32) {
+pub extern "C" fn print_i64(x: i64) {
     println!("{}", x);
 }
 
-pub extern "C" fn print_u32(x: u32) {
+pub extern "C" fn print_u64(x: u64) {
     println!("{}", x);
 }
 

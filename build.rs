@@ -5,76 +5,99 @@ pub fn main() {
 }
 
 fn write_unary(instr: &str, ty: &str, op: &str, source: &mut String) {
-    source.push_str(&format!("
+    source.push_str(&format!(
+        "
     Instr::{instr}(out, src) => {{
         let x: {ty} = read_stack(stack, src);
         let res = {op};
         write_stack(stack, out, res);
-    }}"));
+    }}"
+    ));
 }
 
 fn write_binary(instr: &str, ty: &str, op: &str, source: &mut String) {
-    source.push_str(&format!("
+    source.push_str(&format!(
+        "
     Instr::{instr}(out, lhs, rhs) => {{
         let a: {ty} = read_stack(stack, lhs);
         let b: {ty} = read_stack(stack, rhs);
         let res = {op};
         write_stack(stack, out, res);
-    }}"));
+    }}"
+    ));
 }
 
 fn write_shift(instr: &str, ty: &str, op: &str, source: &mut String) {
-    source.push_str(&format!("
+    source.push_str(&format!(
+        "
     Instr::{instr}(out, lhs, rhs) => {{
         let a: {ty} = read_stack(stack, lhs);
         let b: u8 = read_stack(stack, rhs);
         let res = {op};
         write_stack(stack, out, res);
-    }}"));
+    }}"
+    ));
 }
 
 fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
-    source.push_str(&format!("
+    source.push_str(&format!(
+        "
     Instr::{instr}(out, x) => {{
         let res: {ty} = {op};
         write_stack(stack, out, res);
-    }}"));
+    }}"
+    ));
 }
 
 fn write_exec_match() {
     let mut source = String::new();
     source.push_str("match instr {");
 
-    write_immediate("I32_Const","i32","x",&mut source);
-    write_unary("I32_Mov","i32","x",&mut source);
-    write_unary("I32_Neg","i32","x.wrapping_neg()",&mut source);
-    write_unary("I32_Not","i32","!x",&mut source);
+    write_immediate("I32_Const", "i32", "x", &mut source);
+    write_unary("I32_Mov", "i32", "x", &mut source);
+    write_unary("I32_Neg", "i32", "x.wrapping_neg()", &mut source);
+    write_unary("I32_Not", "i32", "!x", &mut source);
 
-    write_binary("I32_Eq","i32","a == b",&mut source);
-    write_binary("I32_NotEq","i32","a != b",&mut source);
+    write_binary("I32_Eq", "i32", "a == b", &mut source);
+    write_binary("I32_NotEq", "i32", "a != b", &mut source);
 
-    write_binary("I32_Add","i32","a.wrapping_add(b)",&mut source);
-    write_binary("I32_Sub","i32","a.wrapping_sub(b)",&mut source);
-    write_binary("I32_Mul","i32","a.wrapping_mul(b)",&mut source);
+    write_binary("I32_Add", "i32", "a.wrapping_add(b)", &mut source);
+    write_binary("I32_Sub", "i32", "a.wrapping_sub(b)", &mut source);
+    write_binary("I32_Mul", "i32", "a.wrapping_mul(b)", &mut source);
 
-    write_binary("I32_Or","i32","a | b",&mut source);
-    write_binary("I32_And","i32","a & b",&mut source);
-    write_binary("I32_Xor","i32","a ^ b",&mut source);
+    write_binary("I32_Or", "i32", "a | b", &mut source);
+    write_binary("I32_And", "i32", "a & b", &mut source);
+    write_binary("I32_Xor", "i32", "a ^ b", &mut source);
 
-    write_shift("I32_ShiftL","i32","a.wrapping_shl(b as _)",&mut source);
+    write_shift("I32_ShiftL", "i32", "a.wrapping_shl(b as _)", &mut source);
 
-    write_binary("I32_S_Lt","i32","a < b",&mut source);
-    write_binary("I32_S_LtEq","i32","a <= b",&mut source);
-    write_binary("I32_S_Div","i32","a.wrapping_div(b)",&mut source);
-    write_binary("I32_S_Rem","i32","a.wrapping_rem(b)",&mut source);
-    write_shift("I32_S_ShiftR","i32","a.wrapping_shr(b as _)",&mut source);
+    write_binary("I32_S_Lt", "i32", "a < b", &mut source);
+    write_binary("I32_S_LtEq", "i32", "a <= b", &mut source);
+    write_binary("I32_S_Div", "i32", "a.wrapping_div(b)", &mut source);
+    write_binary("I32_S_Rem", "i32", "a.wrapping_rem(b)", &mut source);
+    write_shift("I32_S_ShiftR", "i32", "a.wrapping_shr(b as _)", &mut source);
 
-    write_binary("I32_U_Lt","u32","a < b",&mut source);
-    write_binary("I32_U_LtEq","u32","a <= b",&mut source);
-    write_binary("I32_U_Div","u32","a.wrapping_div(b)",&mut source);
-    write_binary("I32_U_Rem","u32","a.wrapping_rem(b)",&mut source);
-    write_shift("I32_U_ShiftR","u32","a.wrapping_shr(b as _)",&mut source);
+    write_binary("I32_U_Lt", "u32", "a < b", &mut source);
+    write_binary("I32_U_LtEq", "u32", "a <= b", &mut source);
+    write_binary("I32_U_Div", "u32", "a.wrapping_div(b)", &mut source);
+    write_binary("I32_U_Rem", "u32", "a.wrapping_rem(b)", &mut source);
+    write_shift("I32_U_ShiftR", "u32", "a.wrapping_shr(b as _)", &mut source);
 
+    // widening operations
+    source.push_str(
+        "
+    Instr::I64_S_Widen_32(out, src) => {
+        let x: i32 = read_stack(stack, src);
+        let res = x as i64;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Widen_32(out, src) => {
+        let x: u32 = read_stack(stack, src);
+        let res = x as u64;
+        write_stack(stack, out, res);
+    }
+    ",
+    );
 
     source.push_str(
         r#"
@@ -91,13 +114,13 @@ fn write_exec_match() {
     }
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::Return => break,
-    Instr::BuiltIn_print_i32(arg) => {
-        let arg: i32 = read_stack(stack, arg);
-        crate::builtin::print_i32(arg);
+    Instr::BuiltIn_print_i64(arg) => {
+        let arg: i64 = read_stack(stack, arg);
+        crate::builtin::print_i64(arg);
     }
-    Instr::BuiltIn_print_u32(arg) => {
-        let arg: u32 = read_stack(stack, arg);
-        crate::builtin::print_u32(arg);
+    Instr::BuiltIn_print_u64(arg) => {
+        let arg: u64 = read_stack(stack, arg);
+        crate::builtin::print_u64(arg);
     }
     Instr::BuiltIn_print_bool(arg) => {
         let arg: bool = read_stack(stack, arg);

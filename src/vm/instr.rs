@@ -56,7 +56,7 @@ pub enum Instr {
     I32_And(u32, u32, u32),
     I32_Xor(u32, u32, u32),
     I32_ShiftL(u32, u32, u32),
-    
+
     I32_S_Lt(u32, u32, u32),
     I32_S_LtEq(u32, u32, u32),
     I32_S_Div(u32, u32, u32),
@@ -69,13 +69,16 @@ pub enum Instr {
     I32_U_Rem(u32, u32, u32),
     I32_U_ShiftR(u32, u32, u32),
 
-    // offset [cond slot]
+    I64_S_Widen_32(u32, u32),
+    I64_U_Widen_32(u32, u32),
+
     Jump(i32),
     JumpF(i32, u32),
-    // no args
+
     Return,
     Bad,
-    BuiltIn_print_i32(u32),
-    BuiltIn_print_u32(u32),
+
+    BuiltIn_print_i64(u32),
+    BuiltIn_print_u64(u32),
     BuiltIn_print_bool(u32),
 }

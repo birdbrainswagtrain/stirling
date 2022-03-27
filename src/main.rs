@@ -17,7 +17,7 @@ const PTR_WIDTH: usize = 8;
 const VERBOSE: bool = false;
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
-const USE_VM_NATIVE: bool = true;
+const USE_VM_NATIVE: bool = false;
 const PROFILE: bool = true;
 
 fn main() {
