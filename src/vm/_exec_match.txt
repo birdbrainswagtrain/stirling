@@ -69,7 +69,7 @@ match instr {
     Instr::I32_ShiftL(out, lhs, rhs) => {
         let a: i32 = read_stack(stack, lhs);
         let b: u8 = read_stack(stack, rhs);
-        let res = a << b;
+        let res = a.wrapping_shl(b as _);
         write_stack(stack, out, res);
     }
     Instr::I32_S_Lt(out, lhs, rhs) => {
@@ -99,7 +99,7 @@ match instr {
     Instr::I32_S_ShiftR(out, lhs, rhs) => {
         let a: i32 = read_stack(stack, lhs);
         let b: u8 = read_stack(stack, rhs);
-        let res = a >> b;
+        let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
     Instr::I32_U_Lt(out, lhs, rhs) => {
@@ -129,7 +129,7 @@ match instr {
     Instr::I32_U_ShiftR(out, lhs, rhs) => {
         let a: u32 = read_stack(stack, lhs);
         let b: u8 = read_stack(stack, rhs);
-        let res = a >> b;
+        let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
     Instr::JumpF(offset, cond) => {

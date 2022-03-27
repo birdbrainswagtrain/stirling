@@ -61,19 +61,19 @@ fn write_exec_match() {
     write_binary("I32_And","i32","a & b",&mut source);
     write_binary("I32_Xor","i32","a ^ b",&mut source);
 
-    write_shift("I32_ShiftL","i32","a << b",&mut source);
+    write_shift("I32_ShiftL","i32","a.wrapping_shl(b as _)",&mut source);
 
     write_binary("I32_S_Lt","i32","a < b",&mut source);
     write_binary("I32_S_LtEq","i32","a <= b",&mut source);
     write_binary("I32_S_Div","i32","a.wrapping_div(b)",&mut source);
     write_binary("I32_S_Rem","i32","a.wrapping_rem(b)",&mut source);
-    write_shift("I32_S_ShiftR","i32","a >> b",&mut source);
+    write_shift("I32_S_ShiftR","i32","a.wrapping_shr(b as _)",&mut source);
 
     write_binary("I32_U_Lt","u32","a < b",&mut source);
     write_binary("I32_U_LtEq","u32","a <= b",&mut source);
     write_binary("I32_U_Div","u32","a.wrapping_div(b)",&mut source);
     write_binary("I32_U_Rem","u32","a.wrapping_rem(b)",&mut source);
-    write_shift("I32_U_ShiftR","u32","a >> b",&mut source);
+    write_shift("I32_U_ShiftR","u32","a.wrapping_shr(b as _)",&mut source);
 
 
     source.push_str(

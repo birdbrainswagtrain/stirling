@@ -87,46 +87,123 @@ struct BCompiler<'a> {
     frame: FrameAllocator,
 }
 
-fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr, bool) {
-    match (op, arg_ty) {
-        (syn::BinOp::Eq(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Eq, false),
-        (syn::BinOp::Ne(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_NotEq, false),
+#[allow(non_camel_case_types)]
+enum BinOpInt {
+    Add,
+    Sub,
+    Mul,
+    Or,
+    And,
+    Xor,
+    ShiftL,
+    Eq,
+    NotEq,
+    
+    S_Div,
+    S_Rem,
+    S_ShiftR,
+    S_Lt,
+    S_LtEq,
 
-        (syn::BinOp::Add(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Add, false),
-        (syn::BinOp::Sub(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Sub, false),
-        (syn::BinOp::Mul(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Mul, false),
+    U_Div,
+    U_Rem,
+    U_ShiftR,
+    U_Lt,
+    U_LtEq,
+}
 
-        (syn::BinOp::BitOr(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Or, false),
-        (syn::BinOp::BitAnd(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_And, false),
-        (syn::BinOp::BitXor(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_Xor, false),
-        (syn::BinOp::Shl(_), Type::Int(IntType::I32 | IntType::U32)) => (Instr::I32_ShiftL, false),
+#[derive(PartialEq)]
+enum BinOpFlag {
+    None,
+    SwapArgs,
+    Assign
+}
 
-        // sign-dependant
-        (syn::BinOp::Lt(_), Type::Int(IntType::I32)) => (Instr::I32_S_Lt, false),
-        (syn::BinOp::Le(_), Type::Int(IntType::I32)) => (Instr::I32_S_LtEq, false),
-        (syn::BinOp::Gt(_), Type::Int(IntType::I32)) => (Instr::I32_S_Lt, true),
-        (syn::BinOp::Ge(_), Type::Int(IntType::I32)) => (Instr::I32_S_LtEq, true),
-        (syn::BinOp::Div(_), Type::Int(IntType::I32)) => (Instr::I32_S_Div, false),
-        (syn::BinOp::Rem(_), Type::Int(IntType::I32)) => (Instr::I32_S_Rem, false),
-        (syn::BinOp::Shr(_), Type::Int(IntType::I32)) => (Instr::I32_S_ShiftR, false),
+fn bin_op_int(op: syn::BinOp, signed: bool) -> (BinOpInt,BinOpFlag) {
+    match (op,signed) {
+        (syn::BinOp::Add(_),_) => (BinOpInt::Add, BinOpFlag::None),
+        (syn::BinOp::AddEq(_),_) => (BinOpInt::Add, BinOpFlag::Assign),
+        (syn::BinOp::Sub(_),_) => (BinOpInt::Sub, BinOpFlag::None),
+        (syn::BinOp::SubEq(_),_) => (BinOpInt::Sub, BinOpFlag::Assign),
+        (syn::BinOp::Mul(_),_) => (BinOpInt::Mul, BinOpFlag::None),
+        (syn::BinOp::MulEq(_),_) => (BinOpInt::Mul, BinOpFlag::Assign),
+        (syn::BinOp::BitOr(_),_) => (BinOpInt::Or, BinOpFlag::None),
+        (syn::BinOp::BitOrEq(_),_) => (BinOpInt::Or, BinOpFlag::Assign),
+        (syn::BinOp::BitAnd(_),_) => (BinOpInt::And, BinOpFlag::None),
+        (syn::BinOp::BitAndEq(_),_) => (BinOpInt::And, BinOpFlag::Assign),
+        (syn::BinOp::BitXor(_),_) => (BinOpInt::Xor, BinOpFlag::None),
+        (syn::BinOp::BitXorEq(_),_) => (BinOpInt::Xor, BinOpFlag::Assign),
+        (syn::BinOp::Shl(_),_) => (BinOpInt::ShiftL, BinOpFlag::None),
+        (syn::BinOp::ShlEq(_),_) => (BinOpInt::ShiftL, BinOpFlag::Assign),
+        (syn::BinOp::Eq(_),_) => (BinOpInt::Eq, BinOpFlag::None),
+        (syn::BinOp::Ne(_),_) => (BinOpInt::NotEq, BinOpFlag::None),
 
-        (syn::BinOp::Lt(_), Type::Int(IntType::U32)) => (Instr::I32_U_Lt, false),
-        (syn::BinOp::Le(_), Type::Int(IntType::U32)) => (Instr::I32_U_LtEq, false),
-        (syn::BinOp::Gt(_), Type::Int(IntType::U32)) => (Instr::I32_U_Lt, true),
-        (syn::BinOp::Ge(_), Type::Int(IntType::U32)) => (Instr::I32_U_LtEq, true),
-        (syn::BinOp::Div(_), Type::Int(IntType::U32)) => (Instr::I32_U_Div, false),
-        (syn::BinOp::Rem(_), Type::Int(IntType::U32)) => (Instr::I32_U_Rem, false),
-        (syn::BinOp::Shr(_), Type::Int(IntType::U32)) => (Instr::I32_U_ShiftR, false),
+        (syn::BinOp::Div(_),true) => (BinOpInt::S_Div, BinOpFlag::None),
+        (syn::BinOp::DivEq(_),true) => (BinOpInt::S_Div, BinOpFlag::Assign),
+        (syn::BinOp::Rem(_),true) => (BinOpInt::S_Rem, BinOpFlag::None),
+        (syn::BinOp::RemEq(_),true) => (BinOpInt::S_Rem, BinOpFlag::Assign),
+        (syn::BinOp::Shr(_),true) => (BinOpInt::S_ShiftR, BinOpFlag::None),
+        (syn::BinOp::ShrEq(_),true) => (BinOpInt::S_ShiftR, BinOpFlag::Assign),
+        (syn::BinOp::Lt(_),true) => (BinOpInt::S_Lt, BinOpFlag::None),
+        (syn::BinOp::Le(_),true) => (BinOpInt::S_LtEq, BinOpFlag::None),
+        (syn::BinOp::Gt(_),true) => (BinOpInt::S_Lt, BinOpFlag::SwapArgs),
+        (syn::BinOp::Ge(_),true) => (BinOpInt::S_LtEq, BinOpFlag::SwapArgs),
 
-        _ => panic!("todo bin-op {:?} {:?}", op, arg_ty),
+        (syn::BinOp::Div(_),false) => (BinOpInt::U_Div, BinOpFlag::None),
+        (syn::BinOp::DivEq(_),false) => (BinOpInt::U_Div, BinOpFlag::Assign),
+        (syn::BinOp::Rem(_),false) => (BinOpInt::U_Rem, BinOpFlag::None),
+        (syn::BinOp::RemEq(_),false) => (BinOpInt::U_Rem, BinOpFlag::Assign),
+        (syn::BinOp::Shr(_),false) => (BinOpInt::U_ShiftR, BinOpFlag::None),
+        (syn::BinOp::ShrEq(_),false) => (BinOpInt::U_ShiftR, BinOpFlag::Assign),
+        (syn::BinOp::Lt(_),false) => (BinOpInt::U_Lt, BinOpFlag::None),
+        (syn::BinOp::Le(_),false) => (BinOpInt::U_LtEq, BinOpFlag::None),
+        (syn::BinOp::Gt(_),false) => (BinOpInt::U_Lt, BinOpFlag::SwapArgs),
+        (syn::BinOp::Ge(_),false) => (BinOpInt::U_LtEq, BinOpFlag::SwapArgs),
+
+        (syn::BinOp::And(_),_) |
+        (syn::BinOp::Or(_),_) => panic!("can not apply logical op to integers"),
+    }
+}
+
+fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr, BinOpFlag) {
+    if arg_ty.is_int() {
+        let (op,flag) = bin_op_int(op,arg_ty.is_signed());
+        let width = arg_ty.byte_size();
+        let instr = match (width,op) {
+            (4,BinOpInt::Add) => Instr::I32_Add,
+            (4,BinOpInt::Sub) => Instr::I32_Sub,
+            (4,BinOpInt::Mul) => Instr::I32_Mul,
+            (4,BinOpInt::Or) => Instr::I32_Or,
+            (4,BinOpInt::And) => Instr::I32_And,
+            (4,BinOpInt::Xor) => Instr::I32_Xor,
+            (4,BinOpInt::ShiftL) => Instr::I32_ShiftL,
+            (4,BinOpInt::Eq) => Instr::I32_Eq,
+            (4,BinOpInt::NotEq) => Instr::I32_NotEq,
+
+            (4,BinOpInt::S_Div) => Instr::I32_S_Div,
+            (4,BinOpInt::S_Rem) => Instr::I32_S_Rem,
+            (4,BinOpInt::S_ShiftR) => Instr::I32_S_ShiftR,
+            (4,BinOpInt::S_Lt) => Instr::I32_S_Lt,
+            (4,BinOpInt::S_LtEq) => Instr::I32_S_LtEq,
+
+            (4,BinOpInt::U_Div) => Instr::I32_U_Div,
+            (4,BinOpInt::U_Rem) => Instr::I32_U_Rem,
+            (4,BinOpInt::U_ShiftR) => Instr::I32_U_ShiftR,
+            (4,BinOpInt::U_Lt) => Instr::I32_U_Lt,
+            (4,BinOpInt::U_LtEq) => Instr::I32_U_LtEq,
+            _ => panic!("binop nyi {}",width)
+        };
+
+        (instr,flag)
+    } else {
+        panic!("todo more bin ops");
     }
 }
 
 fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
     match (op, ty) {
         (syn::UnOp::Neg(_), Type::Int(IntType::I32)) => Instr::I32_Neg,
-        (syn::UnOp::Not(_), Type::Int(IntType::I32)) => Instr::I32_Not,
-        (syn::UnOp::Not(_), Type::Int(IntType::U32)) => Instr::I32_Not,
+        (syn::UnOp::Not(_), Type::Int(IntType::I32 | IntType::U32)) => Instr::I32_Not,
         _ => panic!("todo un-op {:?} {:?}", op, ty),
     }
 }
@@ -143,6 +220,16 @@ impl<'a> BCompiler<'a> {
         assert_eq!(self.code.len(), self.code_frame_depth.len());
         self.code.push(ins);
         self.code_frame_depth.push(self.frame.0);
+    }
+
+    fn get_assign_dest(&mut self, dest: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
+        assert!(mandatory_dest_slot.is_none());
+        let dest_expr = &self.input_fn.exprs[dest as usize].expr;
+        if let Expr::Var(id) = dest_expr {
+            self.var_map[*id as usize]
+        } else {
+            panic!("non-trivial assign");
+        }
     }
 
     fn lower_expr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
@@ -172,13 +259,8 @@ impl<'a> BCompiler<'a> {
             }
             Expr::Assign(dest, src) => {
                 assert!(mandatory_dest_slot.is_none());
-                let dest_expr = &self.input_fn.exprs[*dest as usize].expr;
-                if let Expr::Var(id) = dest_expr {
-                    let sub_dest_slot = self.var_map[*id as usize];
-                    self.lower_expr(*src, sub_dest_slot);
-                } else {
-                    panic!("non-trivial assign");
-                }
+                let assign_dest_slot = self.get_assign_dest(*dest, mandatory_dest_slot);
+                self.lower_expr(*src, assign_dest_slot);
                 self.frame = saved_frame; // reset stack
                 None
             }
@@ -197,17 +279,22 @@ impl<'a> BCompiler<'a> {
             Expr::BinOpPrimitive(lhs, op, rhs) => {
                 let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
 
-                let (ins_ctor, flip) = instr_for_bin_op(*op, arg_ty);
+                let (ins_ctor, flag) = instr_for_bin_op(*op, arg_ty);
 
                 let l_slot = self.lower_expr(*lhs, None).unwrap();
                 let r_slot = self.lower_expr(*rhs, None).unwrap();
 
                 self.frame = saved_frame; // args ready, reset stack
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                let ins = if !flip {
-                    ins_ctor(dest_slot.unwrap(), l_slot, r_slot)
+                let dest_slot = if flag == BinOpFlag::Assign {
+                    self.get_assign_dest(*lhs, mandatory_dest_slot)
                 } else {
+                    mandatory_dest_slot.or_else(|| self.frame.alloc(*ty))
+                };
+
+                let ins = if flag == BinOpFlag::SwapArgs {
                     ins_ctor(dest_slot.unwrap(), r_slot, l_slot)
+                } else {
+                    ins_ctor(dest_slot.unwrap(), l_slot, r_slot)
                 };
                 self.push_code(ins);
                 dest_slot

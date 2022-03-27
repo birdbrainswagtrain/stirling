@@ -27,6 +27,18 @@ pub fn main() {
         _builtin::print_bool(x > y);
         _builtin::print_bool(x <= y);
         _builtin::print_bool(x >= y);
+
+        let mut m = x;
+        m += y; _builtin::print_i32(m);
+        m -= y; _builtin::print_i32(m);
+        m *= y; _builtin::print_i32(m);
+        m /= y; _builtin::print_i32(m);
+        m %= y; _builtin::print_i32(m);
+        m |= x; _builtin::print_i32(m);
+        m &= y; _builtin::print_i32(m);
+        m ^= y; _builtin::print_i32(m);
+        m >>= 4; _builtin::print_i32(m);
+        m <<= 4; _builtin::print_i32(m);
     }
 
     {
@@ -54,5 +66,17 @@ pub fn main() {
         _builtin::print_bool(x > y);
         _builtin::print_bool(x <= y);
         _builtin::print_bool(x >= y);
+
+        let mut m = x;
+        m += y; _builtin::print_u32(m);
+        m -= y; _builtin::print_u32(m);
+        m *= y; _builtin::print_u32(m);
+        m /= y; _builtin::print_u32(m);
+        m %= y; _builtin::print_u32(m);
+        m |= x; _builtin::print_u32(m);
+        m &= y; _builtin::print_u32(m);
+        m ^= y; _builtin::print_u32(m);
+        m >>= 4; _builtin::print_u32(m);
+        m <<= 4; _builtin::print_u32(m);
     }
 }
