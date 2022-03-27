@@ -1,3 +1,5 @@
+use crate::profiler::profile;
+
 use super::Instr;
 
 unsafe fn write_stack<T>(base: *mut u8, offset: u32, x: T) {
@@ -9,11 +11,13 @@ unsafe fn read_stack<T: Copy>(base: *mut u8, offset: u32) -> T {
 }
 
 pub unsafe fn exec_rust(code: Vec<Instr>, stack: *mut u8) {
-    let mut pc = 0;
+    profile("exec interpreter", || {
+        let mut pc = 0;
 
-    loop {
-        let instr = code[pc]; //*code.get_unchecked(pc);// [pc];
-        include!("_exec_match.txt");
-        pc += 1;
-    }
+        loop {
+            let instr = code[pc]; //*code.get_unchecked(pc);// [pc];
+            include!("_exec_match.txt");
+            pc += 1;
+        }
+    })
 }

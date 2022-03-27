@@ -17,7 +17,8 @@ const PTR_WIDTH: usize = 8;
 const VERBOSE: bool = false;
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
-const PROFILE: bool = false;
+const USE_VM_NATIVE: bool = true;
+const PROFILE: bool = true;
 
 fn main() {
     check_abi();
@@ -42,7 +43,7 @@ fn main() {
             jit_compile(func);
 
             let compiled_main = unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) };
-            profile("exec", || compiled_main());
+            profile("exec compiled", || compiled_main());
         }
     } else {
         panic!("can't find main");

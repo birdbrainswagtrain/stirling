@@ -4,10 +4,11 @@ use crate::{
         item::Function,
         types::{IntType, Type},
     },
-    profiler::profile,
+    profiler::profile, USE_VM_NATIVE,
 };
 
 mod exec;
+mod exec_native;
 mod instr;
 
 use instr::Instr;
@@ -35,9 +36,12 @@ pub fn exec(func: &Function) {
     let code = compile(func);
     let mut stack: Vec<u128> = vec![0, 1024];
     let stack = stack.as_mut_ptr() as *mut u8;
-    unsafe {
-        //profile("exec", || exec_rust(code, stack))
-        profile("exec", || exec::exec_rust(code, stack))
+    if USE_VM_NATIVE {
+        exec_native::exec_native(code, stack)
+    } else {
+        unsafe {
+            exec::exec_rust(code, stack)
+        }
     }
 }
 
