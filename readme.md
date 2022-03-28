@@ -3,11 +3,12 @@
 > Experimental JIT for a primitive subset of Rust
 ## Features
 
-### Interpreter
-- i32 / u32: Literals, arithmetic, bitwise, comparisons.
-
 ### Types
-- **Integers** *(excluding i128 / u128)*: Literals, arithmetic, bitwise, comparisons.
+- **Integers:** Literals, arithmetic, bitwise, comparisons.
+
+=================================
+**Not Ported to New Interpreter**
+
 - **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality.
 - **Floats**: Literals, arithmetic, comparisons.
 - **Chars**: Literals, comparisons.
@@ -34,7 +35,6 @@
 - simple function calls (no method invocation or generics)
 
 ### Not Yet Implemented
-- i128 / u128 do not work -- cranelift supports them in theory but there seem to be a lot of holes in the code generator
 - Patterns, match guards, if-let, etc
 - Anything related to namespaces / modules / name resolution is probably severely busted.
 
