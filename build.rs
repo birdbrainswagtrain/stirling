@@ -81,7 +81,8 @@ fn write_exec_match() {
     let mut source = String::new();
     source.push_str("match instr {");
 
-
+    write_int_ops("i8","u8",&mut source);
+    write_int_ops("i16","u16",&mut source);
     write_int_ops("i32","u32",&mut source);
     write_int_ops("i64","u64",&mut source);
 
@@ -95,6 +96,26 @@ fn write_exec_match() {
     }
     Instr::I64_U_Widen_32(out, src) => {
         let x: u32 = read_stack(stack, src);
+        let res = x as u64;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_Widen_16(out, src) => {
+        let x: i16 = read_stack(stack, src);
+        let res = x as i64;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Widen_16(out, src) => {
+        let x: u16 = read_stack(stack, src);
+        let res = x as u64;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_Widen_8(out, src) => {
+        let x: i8 = read_stack(stack, src);
+        let res = x as i64;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Widen_8(out, src) => {
+        let x: u8 = read_stack(stack, src);
         let res = x as u64;
         write_stack(stack, out, res);
     }

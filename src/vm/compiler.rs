@@ -159,6 +159,46 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
         let (op, flag) = bin_op_int(op, arg_ty.is_signed());
         let width = arg_ty.byte_size();
         let instr = match (width, op) {
+            (1, BinOpInt::Add) => Instr::I8_Add,
+            (1, BinOpInt::Sub) => Instr::I8_Sub,
+            (1, BinOpInt::Mul) => Instr::I8_Mul,
+            (1, BinOpInt::Or) => Instr::I8_Or,
+            (1, BinOpInt::And) => Instr::I8_And,
+            (1, BinOpInt::Xor) => Instr::I8_Xor,
+            (1, BinOpInt::ShiftL) => Instr::I8_ShiftL,
+            (1, BinOpInt::Eq) => Instr::I8_Eq,
+            (1, BinOpInt::NotEq) => Instr::I8_NotEq,
+            (1, BinOpInt::S_Div) => Instr::I8_S_Div,
+            (1, BinOpInt::S_Rem) => Instr::I8_S_Rem,
+            (1, BinOpInt::S_ShiftR) => Instr::I8_S_ShiftR,
+            (1, BinOpInt::S_Lt) => Instr::I8_S_Lt,
+            (1, BinOpInt::S_LtEq) => Instr::I8_S_LtEq,
+            (1, BinOpInt::U_Div) => Instr::I8_U_Div,
+            (1, BinOpInt::U_Rem) => Instr::I8_U_Rem,
+            (1, BinOpInt::U_ShiftR) => Instr::I8_U_ShiftR,
+            (1, BinOpInt::U_Lt) => Instr::I8_U_Lt,
+            (1, BinOpInt::U_LtEq) => Instr::I8_U_LtEq,
+
+            (2, BinOpInt::Add) => Instr::I16_Add,
+            (2, BinOpInt::Sub) => Instr::I16_Sub,
+            (2, BinOpInt::Mul) => Instr::I16_Mul,
+            (2, BinOpInt::Or) => Instr::I16_Or,
+            (2, BinOpInt::And) => Instr::I16_And,
+            (2, BinOpInt::Xor) => Instr::I16_Xor,
+            (2, BinOpInt::ShiftL) => Instr::I16_ShiftL,
+            (2, BinOpInt::Eq) => Instr::I16_Eq,
+            (2, BinOpInt::NotEq) => Instr::I16_NotEq,
+            (2, BinOpInt::S_Div) => Instr::I16_S_Div,
+            (2, BinOpInt::S_Rem) => Instr::I16_S_Rem,
+            (2, BinOpInt::S_ShiftR) => Instr::I16_S_ShiftR,
+            (2, BinOpInt::S_Lt) => Instr::I16_S_Lt,
+            (2, BinOpInt::S_LtEq) => Instr::I16_S_LtEq,
+            (2, BinOpInt::U_Div) => Instr::I16_U_Div,
+            (2, BinOpInt::U_Rem) => Instr::I16_U_Rem,
+            (2, BinOpInt::U_ShiftR) => Instr::I16_U_ShiftR,
+            (2, BinOpInt::U_Lt) => Instr::I16_U_Lt,
+            (2, BinOpInt::U_LtEq) => Instr::I16_U_LtEq,
+
             (4, BinOpInt::Add) => Instr::I32_Add,
             (4, BinOpInt::Sub) => Instr::I32_Sub,
             (4, BinOpInt::Mul) => Instr::I32_Mul,
@@ -209,6 +249,12 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
 
 fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
     match (op, ty) {
+        (syn::UnOp::Neg(_), Type::Int(IntType::I8)) => Instr::I8_Neg,
+        (syn::UnOp::Not(_), Type::Int(IntType::I8 | IntType::U8)) => Instr::I8_Not,
+
+        (syn::UnOp::Neg(_), Type::Int(IntType::I16)) => Instr::I16_Neg,
+        (syn::UnOp::Not(_), Type::Int(IntType::I16 | IntType::U16)) => Instr::I16_Not,
+
         (syn::UnOp::Neg(_), Type::Int(IntType::I32)) => Instr::I32_Neg,
         (syn::UnOp::Not(_), Type::Int(IntType::I32 | IntType::U32)) => Instr::I32_Not,
 
@@ -278,6 +324,12 @@ impl<'a> BCompiler<'a> {
                 let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
                 if let Some(dest_slot) = dest_slot {
                     match ty {
+                        Type::Int(IntType::I8) | Type::Int(IntType::U8) => {
+                            self.push_code(Instr::I8_Const(dest_slot, *n as i8));
+                        }
+                        Type::Int(IntType::I16) | Type::Int(IntType::U16) => {
+                            self.push_code(Instr::I16_Const(dest_slot, *n as i16));
+                        }
                         Type::Int(IntType::I32) | Type::Int(IntType::U32) => {
                             self.push_code(Instr::I32_Const(dest_slot, *n as i32));
                         }
@@ -301,6 +353,10 @@ impl<'a> BCompiler<'a> {
                         let signed = src_ty.is_signed();
                         let src_slot = self.lower_expr(*src, None).unwrap();
                         let ins_ctor = match (src_width, res_width, signed) {
+                            (1, 8, true) => Instr::I64_S_Widen_8,
+                            (1, 8, false) => Instr::I64_U_Widen_8,
+                            (2, 8, true) => Instr::I64_S_Widen_16,
+                            (2, 8, false) => Instr::I64_U_Widen_16,
                             (4, 8, true) => Instr::I64_S_Widen_32,
                             (4, 8, false) => Instr::I64_U_Widen_32,
                             _ => panic!("todo widen {} {} {}", src_width, res_width, signed),
@@ -424,6 +480,10 @@ impl<'a> BCompiler<'a> {
             self.push_code(Instr::I64_Mov(dest, src));
         } else if size == 4 && align == 4 {
             self.push_code(Instr::I32_Mov(dest, src));
+        } else if size == 2 && align == 2 {
+            self.push_code(Instr::I16_Mov(dest, src));
+        } else if size == 1 && align == 1 {
+            self.push_code(Instr::I8_Mov(dest, src));
         } else {
             panic!("no move");
         }
