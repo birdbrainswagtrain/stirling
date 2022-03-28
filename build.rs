@@ -49,39 +49,41 @@ fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
     ));
 }
 
+fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
+    let big = signed.to_uppercase();
+
+    write_immediate(&format!("{}_Const",big), signed, "x", source);
+    write_unary(&format!("{}_Mov",big), signed, "x", source);
+    write_unary(&format!("{}_Neg",big), signed, "x.wrapping_neg()", source);
+    write_unary(&format!("{}_Not",big), signed, "!x", source);
+    write_binary(&format!("{}_Eq",big), signed, "a == b", source);
+    write_binary(&format!("{}_NotEq",big), signed, "a != b", source);
+    write_binary(&format!("{}_Add",big), signed, "a.wrapping_add(b)", source);
+    write_binary(&format!("{}_Sub",big), signed, "a.wrapping_sub(b)", source);
+    write_binary(&format!("{}_Mul",big), signed, "a.wrapping_mul(b)", source);
+    write_binary(&format!("{}_Or",big), signed, "a | b", source);
+    write_binary(&format!("{}_And",big), signed, "a & b", source);
+    write_binary(&format!("{}_Xor",big), signed, "a ^ b", source);
+    write_shift(&format!("{}_ShiftL",big), signed, "a.wrapping_shl(b as _)", source);
+    write_binary(&format!("{}_S_Lt",big), signed, "a < b", source);
+    write_binary(&format!("{}_S_LtEq",big), signed, "a <= b", source);
+    write_binary(&format!("{}_S_Div",big), signed, "a.wrapping_div(b)", source);
+    write_binary(&format!("{}_S_Rem",big), signed, "a.wrapping_rem(b)", source);
+    write_shift(&format!("{}_S_ShiftR",big), signed, "a.wrapping_shr(b as _)", source);
+    write_binary(&format!("{}_U_Lt",big), unsigned, "a < b", source);
+    write_binary(&format!("{}_U_LtEq",big), unsigned, "a <= b", source);
+    write_binary(&format!("{}_U_Div",big), unsigned, "a.wrapping_div(b)", source);
+    write_binary(&format!("{}_U_Rem",big), unsigned, "a.wrapping_rem(b)", source);
+    write_shift(&format!("{}_U_ShiftR",big), unsigned, "a.wrapping_shr(b as _)", source);
+}
+
 fn write_exec_match() {
     let mut source = String::new();
     source.push_str("match instr {");
 
-    write_immediate("I32_Const", "i32", "x", &mut source);
-    write_unary("I32_Mov", "i32", "x", &mut source);
-    write_unary("I32_Neg", "i32", "x.wrapping_neg()", &mut source);
-    write_unary("I32_Not", "i32", "!x", &mut source);
 
-    write_binary("I32_Eq", "i32", "a == b", &mut source);
-    write_binary("I32_NotEq", "i32", "a != b", &mut source);
-
-    write_binary("I32_Add", "i32", "a.wrapping_add(b)", &mut source);
-    write_binary("I32_Sub", "i32", "a.wrapping_sub(b)", &mut source);
-    write_binary("I32_Mul", "i32", "a.wrapping_mul(b)", &mut source);
-
-    write_binary("I32_Or", "i32", "a | b", &mut source);
-    write_binary("I32_And", "i32", "a & b", &mut source);
-    write_binary("I32_Xor", "i32", "a ^ b", &mut source);
-
-    write_shift("I32_ShiftL", "i32", "a.wrapping_shl(b as _)", &mut source);
-
-    write_binary("I32_S_Lt", "i32", "a < b", &mut source);
-    write_binary("I32_S_LtEq", "i32", "a <= b", &mut source);
-    write_binary("I32_S_Div", "i32", "a.wrapping_div(b)", &mut source);
-    write_binary("I32_S_Rem", "i32", "a.wrapping_rem(b)", &mut source);
-    write_shift("I32_S_ShiftR", "i32", "a.wrapping_shr(b as _)", &mut source);
-
-    write_binary("I32_U_Lt", "u32", "a < b", &mut source);
-    write_binary("I32_U_LtEq", "u32", "a <= b", &mut source);
-    write_binary("I32_U_Div", "u32", "a.wrapping_div(b)", &mut source);
-    write_binary("I32_U_Rem", "u32", "a.wrapping_rem(b)", &mut source);
-    write_shift("I32_U_ShiftR", "u32", "a.wrapping_shr(b as _)", &mut source);
+    write_int_ops("i32","u32",&mut source);
+    write_int_ops("i64","u64",&mut source);
 
     // widening operations
     source.push_str(

@@ -132,6 +132,139 @@ match instr {
         let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
+    Instr::I64_Const(out, x) => {
+        let res: i64 = x;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Mov(out, src) => {
+        let x: i64 = read_stack(stack, src);
+        let res = x;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Neg(out, src) => {
+        let x: i64 = read_stack(stack, src);
+        let res = x.wrapping_neg();
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Not(out, src) => {
+        let x: i64 = read_stack(stack, src);
+        let res = !x;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Eq(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a == b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_NotEq(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a != b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Add(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a.wrapping_add(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Sub(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a.wrapping_sub(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Mul(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a.wrapping_mul(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Or(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a | b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_And(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a & b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_Xor(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a ^ b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_ShiftL(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shl(b as _);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_Lt(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_LtEq(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_Div(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_Rem(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: i64 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_S_ShiftR(out, lhs, rhs) => {
+        let a: i64 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shr(b as _);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Lt(out, lhs, rhs) => {
+        let a: u64 = read_stack(stack, lhs);
+        let b: u64 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_LtEq(out, lhs, rhs) => {
+        let a: u64 = read_stack(stack, lhs);
+        let b: u64 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Div(out, lhs, rhs) => {
+        let a: u64 = read_stack(stack, lhs);
+        let b: u64 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_Rem(out, lhs, rhs) => {
+        let a: u64 = read_stack(stack, lhs);
+        let b: u64 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I64_U_ShiftR(out, lhs, rhs) => {
+        let a: u64 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shr(b as _);
+        write_stack(stack, out, res);
+    }
     Instr::I64_S_Widen_32(out, src) => {
         let x: i32 = read_stack(stack, src);
         let res = x as i64;

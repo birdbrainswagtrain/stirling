@@ -74,6 +74,7 @@ struct BCompiler<'a> {
     frame: FrameAllocator,
 }
 
+#[derive(Debug, Clone, Copy)]
 #[allow(non_camel_case_types)]
 enum BinOpInt {
     Add,
@@ -167,19 +168,37 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
             (4, BinOpInt::ShiftL) => Instr::I32_ShiftL,
             (4, BinOpInt::Eq) => Instr::I32_Eq,
             (4, BinOpInt::NotEq) => Instr::I32_NotEq,
-
             (4, BinOpInt::S_Div) => Instr::I32_S_Div,
             (4, BinOpInt::S_Rem) => Instr::I32_S_Rem,
             (4, BinOpInt::S_ShiftR) => Instr::I32_S_ShiftR,
             (4, BinOpInt::S_Lt) => Instr::I32_S_Lt,
             (4, BinOpInt::S_LtEq) => Instr::I32_S_LtEq,
-
             (4, BinOpInt::U_Div) => Instr::I32_U_Div,
             (4, BinOpInt::U_Rem) => Instr::I32_U_Rem,
             (4, BinOpInt::U_ShiftR) => Instr::I32_U_ShiftR,
             (4, BinOpInt::U_Lt) => Instr::I32_U_Lt,
             (4, BinOpInt::U_LtEq) => Instr::I32_U_LtEq,
-            _ => panic!("binop nyi {}", width),
+
+            (8, BinOpInt::Add) => Instr::I64_Add,
+            (8, BinOpInt::Sub) => Instr::I64_Sub,
+            (8, BinOpInt::Mul) => Instr::I64_Mul,
+            (8, BinOpInt::Or) => Instr::I64_Or,
+            (8, BinOpInt::And) => Instr::I64_And,
+            (8, BinOpInt::Xor) => Instr::I64_Xor,
+            (8, BinOpInt::ShiftL) => Instr::I64_ShiftL,
+            (8, BinOpInt::Eq) => Instr::I64_Eq,
+            (8, BinOpInt::NotEq) => Instr::I64_NotEq,
+            (8, BinOpInt::S_Div) => Instr::I64_S_Div,
+            (8, BinOpInt::S_Rem) => Instr::I64_S_Rem,
+            (8, BinOpInt::S_ShiftR) => Instr::I64_S_ShiftR,
+            (8, BinOpInt::S_Lt) => Instr::I64_S_Lt,
+            (8, BinOpInt::S_LtEq) => Instr::I64_S_LtEq,
+            (8, BinOpInt::U_Div) => Instr::I64_U_Div,
+            (8, BinOpInt::U_Rem) => Instr::I64_U_Rem,
+            (8, BinOpInt::U_ShiftR) => Instr::I64_U_ShiftR,
+            (8, BinOpInt::U_Lt) => Instr::I64_U_Lt,
+            (8, BinOpInt::U_LtEq) => Instr::I64_U_LtEq,
+            _ => panic!("binop nyi {} {:?}", width, op),
         };
 
         (instr, flag)
@@ -192,6 +211,9 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
     match (op, ty) {
         (syn::UnOp::Neg(_), Type::Int(IntType::I32)) => Instr::I32_Neg,
         (syn::UnOp::Not(_), Type::Int(IntType::I32 | IntType::U32)) => Instr::I32_Not,
+
+        (syn::UnOp::Neg(_), Type::Int(IntType::I64)) => Instr::I64_Neg,
+        (syn::UnOp::Not(_), Type::Int(IntType::I64 | IntType::U64)) => Instr::I64_Not,
         _ => panic!("todo un-op {:?} {:?}", op, ty),
     }
 }
@@ -258,6 +280,9 @@ impl<'a> BCompiler<'a> {
                     match ty {
                         Type::Int(IntType::I32) | Type::Int(IntType::U32) => {
                             self.push_code(Instr::I32_Const(dest_slot, *n as i32));
+                        }
+                        Type::Int(IntType::I64) | Type::Int(IntType::U64) => {
+                            self.push_code(Instr::I64_Const(dest_slot, *n as i64));
                         }
                         _ => panic!("todo more literal ints"),
                     }
@@ -395,7 +420,9 @@ impl<'a> BCompiler<'a> {
     fn insert_move(&mut self, dest: u32, src: u32, ty: Type) {
         let size = ty.byte_size();
         let align = ty.byte_align();
-        if size == 4 && align == 4 {
+        if size == 8 && align == 8 {
+            self.push_code(Instr::I64_Mov(dest, src));
+        } else if size == 4 && align == 4 {
             self.push_code(Instr::I32_Mov(dest, src));
         } else {
             panic!("no move");
