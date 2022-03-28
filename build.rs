@@ -52,7 +52,23 @@ fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
 fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     let big = signed.to_uppercase();
 
-    write_immediate(&format!("{}_Const",big), signed, "x", source);
+    if signed == "i128" {
+        // I128 constants use up to two instructions, each containing an i64
+        source.push_str(&format!(
+            "
+        Instr::I128_Const(out, x) => {{
+            let res: i128 = x as i128;
+            write_stack(stack, out, res);
+        }}
+        Instr::I128_ConstHigh(out, x) => {{
+            let res: i64 = x;
+            write_stack(stack, out + 8, res);
+        }}
+        "
+        ));
+    } else {
+        write_immediate(&format!("{}_Const",big), signed, "x", source);
+    }
     write_unary(&format!("{}_Mov",big), signed, "x", source);
     write_unary(&format!("{}_Neg",big), signed, "x.wrapping_neg()", source);
     write_unary(&format!("{}_Not",big), signed, "!x", source);
@@ -85,6 +101,7 @@ fn write_exec_match() {
     write_int_ops("i16","u16",&mut source);
     write_int_ops("i32","u32",&mut source);
     write_int_ops("i64","u64",&mut source);
+    write_int_ops("i128","u128",&mut source);
 
     // widening operations
     source.push_str(
@@ -137,13 +154,13 @@ fn write_exec_match() {
     }
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::Return => break,
-    Instr::BuiltIn_print_i64(arg) => {
-        let arg: i64 = read_stack(stack, arg);
-        crate::builtin::print_i64(arg);
+    Instr::BuiltIn_print_int(arg) => {
+        let arg: i128 = read_stack(stack, arg);
+        crate::builtin::print_int(arg);
     }
-    Instr::BuiltIn_print_u64(arg) => {
-        let arg: u64 = read_stack(stack, arg);
-        crate::builtin::print_u64(arg);
+    Instr::BuiltIn_print_uint(arg) => {
+        let arg: u128 = read_stack(stack, arg);
+        crate::builtin::print_uint(arg);
     }
     Instr::BuiltIn_print_bool(arg) => {
         let arg: bool = read_stack(stack, arg);

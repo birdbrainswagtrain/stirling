@@ -238,6 +238,27 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
             (8, BinOpInt::U_ShiftR) => Instr::I64_U_ShiftR,
             (8, BinOpInt::U_Lt) => Instr::I64_U_Lt,
             (8, BinOpInt::U_LtEq) => Instr::I64_U_LtEq,
+
+            (16, BinOpInt::Add) => Instr::I128_Add,
+            (16, BinOpInt::Sub) => Instr::I128_Sub,
+            (16, BinOpInt::Mul) => Instr::I128_Mul,
+            (16, BinOpInt::Or) => Instr::I128_Or,
+            (16, BinOpInt::And) => Instr::I128_And,
+            (16, BinOpInt::Xor) => Instr::I128_Xor,
+            (16, BinOpInt::ShiftL) => Instr::I128_ShiftL,
+            (16, BinOpInt::Eq) => Instr::I128_Eq,
+            (16, BinOpInt::NotEq) => Instr::I128_NotEq,
+            (16, BinOpInt::S_Div) => Instr::I128_S_Div,
+            (16, BinOpInt::S_Rem) => Instr::I128_S_Rem,
+            (16, BinOpInt::S_ShiftR) => Instr::I128_S_ShiftR,
+            (16, BinOpInt::S_Lt) => Instr::I128_S_Lt,
+            (16, BinOpInt::S_LtEq) => Instr::I128_S_LtEq,
+            (16, BinOpInt::U_Div) => Instr::I128_U_Div,
+            (16, BinOpInt::U_Rem) => Instr::I128_U_Rem,
+            (16, BinOpInt::U_ShiftR) => Instr::I128_U_ShiftR,
+            (16, BinOpInt::U_Lt) => Instr::I128_U_Lt,
+            (16, BinOpInt::U_LtEq) => Instr::I128_U_LtEq,
+
             _ => panic!("binop nyi {} {:?}", width, op),
         };
 
@@ -248,19 +269,27 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
 }
 
 fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
-    match (op, ty) {
-        (syn::UnOp::Neg(_), Type::Int(IntType::I8)) => Instr::I8_Neg,
-        (syn::UnOp::Not(_), Type::Int(IntType::I8 | IntType::U8)) => Instr::I8_Not,
+    if ty.is_int() {
+        let width = ty.byte_size();
+        match (op, width) {
+            (syn::UnOp::Neg(_), 1) => Instr::I8_Neg,
+            (syn::UnOp::Not(_), 1) => Instr::I8_Not,
+        
+            (syn::UnOp::Neg(_), 2) => Instr::I16_Neg,
+            (syn::UnOp::Not(_), 2) => Instr::I16_Not,
+        
+            (syn::UnOp::Neg(_), 4) => Instr::I32_Neg,
+            (syn::UnOp::Not(_), 4) => Instr::I32_Not,
+        
+            (syn::UnOp::Neg(_), 8) => Instr::I64_Neg,
+            (syn::UnOp::Not(_), 8) => Instr::I64_Not,
 
-        (syn::UnOp::Neg(_), Type::Int(IntType::I16)) => Instr::I16_Neg,
-        (syn::UnOp::Not(_), Type::Int(IntType::I16 | IntType::U16)) => Instr::I16_Not,
-
-        (syn::UnOp::Neg(_), Type::Int(IntType::I32)) => Instr::I32_Neg,
-        (syn::UnOp::Not(_), Type::Int(IntType::I32 | IntType::U32)) => Instr::I32_Not,
-
-        (syn::UnOp::Neg(_), Type::Int(IntType::I64)) => Instr::I64_Neg,
-        (syn::UnOp::Not(_), Type::Int(IntType::I64 | IntType::U64)) => Instr::I64_Not,
-        _ => panic!("todo un-op {:?} {:?}", op, ty),
+            (syn::UnOp::Neg(_), 16) => Instr::I128_Neg,
+            (syn::UnOp::Not(_), 16) => Instr::I128_Not,
+            _ => panic!("todo un-op int {:?} {:?}", op, ty),
+        }
+    } else {
+        panic!("todo un-op {:?}",ty);
     }
 }
 
@@ -323,21 +352,28 @@ impl<'a> BCompiler<'a> {
             Expr::LitInt(n) => {
                 let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
                 if let Some(dest_slot) = dest_slot {
-                    match ty {
-                        Type::Int(IntType::I8) | Type::Int(IntType::U8) => {
-                            self.push_code(Instr::I8_Const(dest_slot, *n as i8));
+                    let width = ty.byte_size();
+                    match width {
+                        1 => self.push_code(Instr::I8_Const(dest_slot, *n as i8)),
+                        2 => self.push_code(Instr::I16_Const(dest_slot, *n as i16)),
+                        4 => self.push_code(Instr::I32_Const(dest_slot, *n as i32)),
+                        8 => self.push_code(Instr::I64_Const(dest_slot, *n as i64)),
+                        16 => {
+                            let low = *n as i64;
+                            let high = ((*n as i128) >> 64) as i64;
+                            self.push_code(Instr::I128_Const(dest_slot, low));
+                            if low >= 0 {
+                                if high != 0 {
+                                    self.push_code(Instr::I128_ConstHigh(dest_slot, high));
+                                }
+                            } else {
+                                if high != -1 {
+                                    self.push_code(Instr::I128_ConstHigh(dest_slot, high));
+                                }
+                            }
                         }
-                        Type::Int(IntType::I16) | Type::Int(IntType::U16) => {
-                            self.push_code(Instr::I16_Const(dest_slot, *n as i16));
-                        }
-                        Type::Int(IntType::I32) | Type::Int(IntType::U32) => {
-                            self.push_code(Instr::I32_Const(dest_slot, *n as i32));
-                        }
-                        Type::Int(IntType::I64) | Type::Int(IntType::U64) => {
-                            self.push_code(Instr::I64_Const(dest_slot, *n as i64));
-                        }
-                        _ => panic!("todo more literal ints"),
-                    }
+                        _ => panic!("todo more literal ints")
+                    };
                 }
                 dest_slot
             }
@@ -407,15 +443,15 @@ impl<'a> BCompiler<'a> {
                 dest_slot
             }
             Expr::CallBuiltin(name, args) => {
-                if name == "print_i64" {
+                if name == "print_int" {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();
                     self.frame = saved_frame; // args ready, reset stack
-                    self.push_code(Instr::BuiltIn_print_i64(arg_slot));
+                    self.push_code(Instr::BuiltIn_print_int(arg_slot));
                     None
-                } else if name == "print_u64" {
+                } else if name == "print_uint" {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();
                     self.frame = saved_frame; // args ready, reset stack
-                    self.push_code(Instr::BuiltIn_print_u64(arg_slot));
+                    self.push_code(Instr::BuiltIn_print_uint(arg_slot));
                     None
                 } else if name == "print_bool" {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();
@@ -476,14 +512,17 @@ impl<'a> BCompiler<'a> {
     fn insert_move(&mut self, dest: u32, src: u32, ty: Type) {
         let size = ty.byte_size();
         let align = ty.byte_align();
-        if size == 8 && align == 8 {
-            self.push_code(Instr::I64_Mov(dest, src));
-        } else if size == 4 && align == 4 {
-            self.push_code(Instr::I32_Mov(dest, src));
-        } else if size == 2 && align == 2 {
-            self.push_code(Instr::I16_Mov(dest, src));
-        } else if size == 1 && align == 1 {
+
+        if size == 1 && align == 1 {
             self.push_code(Instr::I8_Mov(dest, src));
+        } else if size == 2 && align == 2 {
+            self.push_code(Instr::I32_Mov(dest, src));
+        } else if size == 4 && align == 4 {
+            self.push_code(Instr::I16_Mov(dest, src));
+        } else if size == 8 && align == 8 {
+            self.push_code(Instr::I64_Mov(dest, src));
+        } else if size == 16 && align == 16 {
+            self.push_code(Instr::I128_Mov(dest, src));
         } else {
             panic!("no move");
         }

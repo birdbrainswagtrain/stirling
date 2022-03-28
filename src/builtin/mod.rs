@@ -15,17 +15,17 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
         ),
     );
     m.insert(
-        "print_i64",
+        "print_int",
         (
-            builtin::print_i64 as _,
-            Signature::new(vec![Type::Int(IntType::I64)], Type::Void),
+            builtin::print_int as _,
+            Signature::new(vec![Type::Int(IntType::I128)], Type::Void),
         ),
     );
     m.insert(
-        "print_u64",
+        "print_uint",
         (
-            builtin::print_u64 as _,
-            Signature::new(vec![Type::Int(IntType::U64)], Type::Void),
+            builtin::print_uint as _,
+            Signature::new(vec![Type::Int(IntType::U128)], Type::Void),
         ),
     );
     m.insert(

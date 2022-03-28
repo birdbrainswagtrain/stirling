@@ -531,6 +531,144 @@ match instr {
         let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
+        Instr::I128_Const(out, x) => {
+            let res: i128 = x as i128;
+            write_stack(stack, out, res);
+        }
+        Instr::I128_ConstHigh(out, x) => {
+            let res: i64 = x;
+            write_stack(stack, out + 8, res);
+        }
+        
+    Instr::I128_Mov(out, src) => {
+        let x: i128 = read_stack(stack, src);
+        let res = x;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Neg(out, src) => {
+        let x: i128 = read_stack(stack, src);
+        let res = x.wrapping_neg();
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Not(out, src) => {
+        let x: i128 = read_stack(stack, src);
+        let res = !x;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Eq(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a == b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_NotEq(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a != b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Add(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a.wrapping_add(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Sub(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a.wrapping_sub(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Mul(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a.wrapping_mul(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Or(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a | b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_And(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a & b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_Xor(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a ^ b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_ShiftL(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shl(b as _);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Lt(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_LtEq(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Div(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Rem(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: i128 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_ShiftR(out, lhs, rhs) => {
+        let a: i128 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shr(b as _);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Lt(out, lhs, rhs) => {
+        let a: u128 = read_stack(stack, lhs);
+        let b: u128 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_LtEq(out, lhs, rhs) => {
+        let a: u128 = read_stack(stack, lhs);
+        let b: u128 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Div(out, lhs, rhs) => {
+        let a: u128 = read_stack(stack, lhs);
+        let b: u128 = read_stack(stack, rhs);
+        let res = a.wrapping_div(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Rem(out, lhs, rhs) => {
+        let a: u128 = read_stack(stack, lhs);
+        let b: u128 = read_stack(stack, rhs);
+        let res = a.wrapping_rem(b);
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_ShiftR(out, lhs, rhs) => {
+        let a: u128 = read_stack(stack, lhs);
+        let b: u8 = read_stack(stack, rhs);
+        let res = a.wrapping_shr(b as _);
+        write_stack(stack, out, res);
+    }
     Instr::I64_S_Widen_32(out, src) => {
         let x: i32 = read_stack(stack, src);
         let res = x as i64;
@@ -575,13 +713,13 @@ match instr {
     }
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::Return => break,
-    Instr::BuiltIn_print_i64(arg) => {
-        let arg: i64 = read_stack(stack, arg);
-        crate::builtin::print_i64(arg);
+    Instr::BuiltIn_print_int(arg) => {
+        let arg: i128 = read_stack(stack, arg);
+        crate::builtin::print_int(arg);
     }
-    Instr::BuiltIn_print_u64(arg) => {
-        let arg: u64 = read_stack(stack, arg);
-        crate::builtin::print_u64(arg);
+    Instr::BuiltIn_print_uint(arg) => {
+        let arg: u128 = read_stack(stack, arg);
+        crate::builtin::print_uint(arg);
     }
     Instr::BuiltIn_print_bool(arg) => {
         let arg: bool = read_stack(stack, arg);
