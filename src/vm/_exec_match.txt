@@ -699,7 +699,46 @@ match instr {
         let res = x as u64;
         write_stack(stack, out, res);
     }
-    
+    Instr::I128_S_Widen_64(out, src) => {
+        let x: i64 = read_stack(stack, src);
+        let res = x as i128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Widen_64(out, src) => {
+        let x: u64 = read_stack(stack, src);
+        let res = x as u128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Widen_32(out, src) => {
+        let x: i32 = read_stack(stack, src);
+        let res = x as i128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Widen_32(out, src) => {
+        let x: u32 = read_stack(stack, src);
+        let res = x as u128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Widen_16(out, src) => {
+        let x: i16 = read_stack(stack, src);
+        let res = x as i128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Widen_16(out, src) => {
+        let x: u16 = read_stack(stack, src);
+        let res = x as u128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_S_Widen_8(out, src) => {
+        let x: i8 = read_stack(stack, src);
+        let res = x as i128;
+        write_stack(stack, out, res);
+    }
+    Instr::I128_U_Widen_8(out, src) => {
+        let x: u8 = read_stack(stack, src);
+        let res = x as u128;
+        write_stack(stack, out, res);
+    }
     Instr::JumpF(offset, cond) => {
         let x: bool = read_stack(stack, cond);
         if !x {

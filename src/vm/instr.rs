@@ -124,12 +124,29 @@ pub enum Instr {
 
     I128_ConstHigh(u32, i64),
 
+    I16_S_Widen_8(u32, u32),
+    I16_U_Widen_8(u32, u32),
+
+    I32_S_Widen_16(u32, u32),
+    I32_U_Widen_16(u32, u32),
+    I32_S_Widen_8(u32, u32),
+    I32_U_Widen_8(u32, u32),
+
     I64_S_Widen_32(u32, u32),
     I64_U_Widen_32(u32, u32),
     I64_S_Widen_16(u32, u32),
     I64_U_Widen_16(u32, u32),
     I64_S_Widen_8(u32, u32),
     I64_U_Widen_8(u32, u32),
+
+    I128_S_Widen_64(u32, u32),
+    I128_U_Widen_64(u32, u32),
+    I128_S_Widen_32(u32, u32),
+    I128_U_Widen_32(u32, u32),
+    I128_S_Widen_16(u32, u32),
+    I128_U_Widen_16(u32, u32),
+    I128_S_Widen_8(u32, u32),
+    I128_U_Widen_8(u32, u32),
 
     Jump(i32),
     JumpF(i32, u32),

@@ -389,12 +389,31 @@ impl<'a> BCompiler<'a> {
                         let signed = src_ty.is_signed();
                         let src_slot = self.lower_expr(*src, None).unwrap();
                         let ins_ctor = match (src_width, res_width, signed) {
+
+                            (1, 2, true) => Instr::I16_S_Widen_8,
+                            (1, 2, false) => Instr::I16_U_Widen_8,
+
+                            (1, 4, true) => Instr::I32_S_Widen_8,
+                            (1, 4, false) => Instr::I32_U_Widen_8,
+                            (2, 4, true) => Instr::I32_S_Widen_16,
+                            (2, 4, false) => Instr::I32_U_Widen_16,
+
                             (1, 8, true) => Instr::I64_S_Widen_8,
                             (1, 8, false) => Instr::I64_U_Widen_8,
                             (2, 8, true) => Instr::I64_S_Widen_16,
                             (2, 8, false) => Instr::I64_U_Widen_16,
                             (4, 8, true) => Instr::I64_S_Widen_32,
                             (4, 8, false) => Instr::I64_U_Widen_32,
+
+                            (1, 16, true) => Instr::I128_S_Widen_8,
+                            (1, 16, false) => Instr::I128_U_Widen_8,
+                            (2, 16, true) => Instr::I128_S_Widen_16,
+                            (2, 16, false) => Instr::I128_U_Widen_16,
+                            (4, 16, true) => Instr::I128_S_Widen_32,
+                            (4, 16, false) => Instr::I128_U_Widen_32,
+                            (8, 16, true) => Instr::I128_S_Widen_64,
+                            (8, 16, false) => Instr::I128_U_Widen_64,
+
                             _ => panic!("todo widen {} {} {}", src_width, res_width, signed),
                         };
                         self.frame = saved_frame; // arg ready, reset stack
@@ -516,9 +535,9 @@ impl<'a> BCompiler<'a> {
         if size == 1 && align == 1 {
             self.push_code(Instr::I8_Mov(dest, src));
         } else if size == 2 && align == 2 {
-            self.push_code(Instr::I32_Mov(dest, src));
-        } else if size == 4 && align == 4 {
             self.push_code(Instr::I16_Mov(dest, src));
+        } else if size == 4 && align == 4 {
+            self.push_code(Instr::I32_Mov(dest, src));
         } else if size == 8 && align == 8 {
             self.push_code(Instr::I64_Mov(dest, src));
         } else if size == 16 && align == 16 {

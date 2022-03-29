@@ -1,10 +1,7 @@
 use crate::{
     hir::{
-        func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{IntType, Type},
     },
-    profiler::profile,
     USE_VM_NATIVE,
 };
 

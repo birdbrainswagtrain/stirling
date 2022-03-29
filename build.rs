@@ -49,6 +49,18 @@ fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
     ));
 }
 
+fn write_widen(dst_bits: i32, src_bits: i32, signed: bool, source: &mut String) {
+    let sign_char = if signed { 'S' } else { 'U' };
+    let ty_char = if signed { 'i' } else { 'u' };
+    source.push_str(&format!(
+        "
+    Instr::I{dst_bits}_{sign_char}_Widen_{src_bits}(out, src) => {{
+        let x: {ty_char}{src_bits} = read_stack(stack, src);
+        let res = x as {ty_char}{dst_bits};
+        write_stack(stack, out, res);
+    }}"));
+}
+
 fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     let big = signed.to_uppercase();
 
@@ -104,40 +116,21 @@ fn write_exec_match() {
     write_int_ops("i128","u128",&mut source);
 
     // widening operations
-    source.push_str(
-        "
-    Instr::I64_S_Widen_32(out, src) => {
-        let x: i32 = read_stack(stack, src);
-        let res = x as i64;
-        write_stack(stack, out, res);
-    }
-    Instr::I64_U_Widen_32(out, src) => {
-        let x: u32 = read_stack(stack, src);
-        let res = x as u64;
-        write_stack(stack, out, res);
-    }
-    Instr::I64_S_Widen_16(out, src) => {
-        let x: i16 = read_stack(stack, src);
-        let res = x as i64;
-        write_stack(stack, out, res);
-    }
-    Instr::I64_U_Widen_16(out, src) => {
-        let x: u16 = read_stack(stack, src);
-        let res = x as u64;
-        write_stack(stack, out, res);
-    }
-    Instr::I64_S_Widen_8(out, src) => {
-        let x: i8 = read_stack(stack, src);
-        let res = x as i64;
-        write_stack(stack, out, res);
-    }
-    Instr::I64_U_Widen_8(out, src) => {
-        let x: u8 = read_stack(stack, src);
-        let res = x as u64;
-        write_stack(stack, out, res);
-    }
-    ",
-    );
+    write_widen(64,32,true,&mut source);
+    write_widen(64,32,false,&mut source);
+    write_widen(64,16,true,&mut source);
+    write_widen(64,16,false,&mut source);
+    write_widen(64,8,true,&mut source);
+    write_widen(64,8,false,&mut source);
+
+    write_widen(128,64,true,&mut source);
+    write_widen(128,64,false,&mut source);
+    write_widen(128,32,true,&mut source);
+    write_widen(128,32,false,&mut source);
+    write_widen(128,16,true,&mut source);
+    write_widen(128,16,false,&mut source);
+    write_widen(128,8,true,&mut source);
+    write_widen(128,8,false,&mut source);
 
     source.push_str(
         r#"
