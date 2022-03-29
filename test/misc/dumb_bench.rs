@@ -7,5 +7,5 @@ pub fn main() {
         i += 1;
         sum = (sum + 5) & 0xFFF;
     }
-    _builtin::print_i32(sum);
+    _builtin::print_int(sum as _);
 }
