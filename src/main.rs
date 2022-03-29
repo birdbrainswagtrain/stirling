@@ -105,6 +105,7 @@ fn test(dir_name: &str) -> ! {
 
     let mut test_files = Vec::new();
     gather_tests(dir_name,&mut test_files);
+    test_files.sort();
     
     let bin_name = Path::new("/tmp/stirling_test_1");
     for file in test_files {
@@ -117,8 +118,7 @@ fn test(dir_name: &str) -> ! {
         println!("-> {:?} {}",file,res_str);
     }
 
-    //use colored::Colorize;
-    //println!("{}","yo".red());
+    profile_log();
     
     std::process::exit(0)
 }
@@ -126,8 +126,8 @@ fn test(dir_name: &str) -> ! {
 fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
     use std::process::Command;
     // Rust compile
-    {
-        let fail = || Err("rustc compile failed".into());
+    profile("rustc compile",||{
+        let fail = || Err(String::from("rustc compile failed"));
 
         let cmd_res = Command::new("rustc")
             .arg(file_name)
@@ -137,30 +137,32 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
 
         if let Ok(cmd_res) = cmd_res {
             if !cmd_res.status.success() {
-                return fail();
+                fail()
+            } else {
+                Ok(())
             }
         } else {
-            return fail();
+            fail()
         }
-    }
+    })?;
 
-    let rustc_out = {
-        let fail = || Err("rustc exec failed".into());
+    let rustc_out = profile("rustc exec",||{
+        let fail = || Err(String::from("rustc exec failed"));
 
         let cmd_res = Command::new(bin_name).output();
         if let Ok(cmd_res) = cmd_res {
             if !cmd_res.status.success() {
-                return fail();
+                fail()
             } else {
-                cmd_res.stdout
+                Ok(cmd_res.stdout)
             }
         } else {
-            return fail();
+            fail()
         }
-    };
+    })?;
 
-    let stirling_out = {
-        let fail = || Err("stirling failed".into());
+    let stirling_out = profile("stirling",||{
+        let fail = || Err(String::from("stirling failed"));
 
         let program = std::env::current_exe().expect("failed to get stirling path");
 
@@ -170,14 +172,14 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
 
         if let Ok(cmd_res) = cmd_res {
             if !cmd_res.status.success() {
-                return fail();
+                fail()
             } else {
-                cmd_res.stdout
+                Ok(cmd_res.stdout)
             }
         } else {
-            return fail();
+            fail()
         }
-    };
+    })?;
 
     if rustc_out != stirling_out {
         Err("rustc and stirling output mismatch".into())
