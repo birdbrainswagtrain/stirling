@@ -124,6 +124,8 @@ pub enum Instr {
 
     I128_ConstHigh(u32, i64),
 
+    Bool_Not(u32, u32),
+
     I16_S_Widen_8(u32, u32),
     I16_U_Widen_8(u32, u32),
 
@@ -148,6 +150,37 @@ pub enum Instr {
     I128_S_Widen_8(u32, u32),
     I128_U_Widen_8(u32, u32),
 
+    F32_Const(u32, f32),
+    F32_Neg(u32, u32),
+    F32_Eq(u32, u32, u32),
+    F32_NotEq(u32, u32, u32),
+    F32_Add(u32, u32, u32),
+    F32_Sub(u32, u32, u32),
+    F32_Mul(u32, u32, u32),
+    F32_Div(u32, u32, u32),
+    F32_Rem(u32, u32, u32),
+    F32_Lt(u32, u32, u32),
+    F32_LtEq(u32, u32, u32),
+    F32_Gt(u32, u32, u32),
+    F32_GtEq(u32, u32, u32),
+
+    F64_Const(u32, f64),
+    F64_Neg(u32, u32),
+    F64_Eq(u32, u32, u32),
+    F64_NotEq(u32, u32, u32),
+    F64_Add(u32, u32, u32),
+    F64_Sub(u32, u32, u32),
+    F64_Mul(u32, u32, u32),
+    F64_Div(u32, u32, u32),
+    F64_Rem(u32, u32, u32),
+    F64_Lt(u32, u32, u32),
+    F64_LtEq(u32, u32, u32),
+    F64_Gt(u32, u32, u32),
+    F64_GtEq(u32, u32, u32),
+
+    F32_From_F64(u32, u32),
+    F64_From_F32(u32, u32),
+
     Jump(i32),
     JumpF(i32, u32),
 
@@ -157,4 +190,6 @@ pub enum Instr {
     BuiltIn_print_int(u32),
     BuiltIn_print_uint(u32),
     BuiltIn_print_bool(u32),
+    BuiltIn_print_char(u32),
+    BuiltIn_print_float(u32),
 }

@@ -95,7 +95,6 @@ fn gather_tests(dir_name: &str, files: &mut Vec<PathBuf>) {
                     files.push(file);
                 }
             }
-            //println!("{:?}",entry);
         }
     }
 }
@@ -115,7 +114,7 @@ fn test(dir_name: &str) -> ! {
         } else {
             "OKAY".green()
         };
-        println!("-> {:?} {}",file,res_str);
+        println!("{:30} {}",file.to_str().unwrap(),res_str);
     }
 
     profile_log();

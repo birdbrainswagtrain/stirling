@@ -669,6 +669,171 @@ match instr {
         let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
+    Instr::F64_Const(out, x) => {
+        let res: f64 = x;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Neg(out, src) => {
+        let x: f64 = read_stack(stack, src);
+        let res = -x;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Add(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a + b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Sub(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a - b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Mul(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a * b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Div(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a / b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Rem(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a % b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Eq(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a == b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_NotEq(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a != b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Lt(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_LtEq(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_Gt(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a > b;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_GtEq(out, lhs, rhs) => {
+        let a: f64 = read_stack(stack, lhs);
+        let b: f64 = read_stack(stack, rhs);
+        let res = a >= b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Const(out, x) => {
+        let res: f32 = x;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Neg(out, src) => {
+        let x: f32 = read_stack(stack, src);
+        let res = -x;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Add(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a + b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Sub(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a - b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Mul(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a * b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Div(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a / b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Rem(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a % b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Eq(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a == b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_NotEq(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a != b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Lt(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a < b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_LtEq(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a <= b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_Gt(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a > b;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_GtEq(out, lhs, rhs) => {
+        let a: f32 = read_stack(stack, lhs);
+        let b: f32 = read_stack(stack, rhs);
+        let res = a >= b;
+        write_stack(stack, out, res);
+    }
+    Instr::Bool_Not(out, src) => {
+        let x: bool = read_stack(stack, src);
+        let res = !x;
+        write_stack(stack, out, res);
+    }
+    Instr::F64_From_F32(out, src) => {
+        let x: f32 = read_stack(stack, src);
+        let res = x as f64;
+        write_stack(stack, out, res);
+    }
+    Instr::F32_From_F64(out, src) => {
+        let x: f64 = read_stack(stack, src);
+        let res = x as f32;
+        write_stack(stack, out, res);
+    }
     Instr::I16_S_Widen_8(out, src) => {
         let x: i8 = read_stack(stack, src);
         let res = x as i16;
@@ -790,9 +955,17 @@ match instr {
         let arg: u128 = read_stack(stack, arg);
         crate::builtin::print_uint(arg);
     }
+    Instr::BuiltIn_print_float(arg) => {
+        let arg: f64 = read_stack(stack, arg);
+        crate::builtin::print_float(arg);
+    }
     Instr::BuiltIn_print_bool(arg) => {
         let arg: bool = read_stack(stack, arg);
         crate::builtin::print_bool(arg);
+    }
+    Instr::BuiltIn_print_char(arg) => {
+        let arg: char = read_stack(stack, arg);
+        crate::builtin::print_char(arg);
     }
     _ => panic!("NYI {:?}",instr)
 }

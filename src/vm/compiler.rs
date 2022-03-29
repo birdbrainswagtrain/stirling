@@ -2,7 +2,7 @@ use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{IntType, Type},
+        types::{IntType, Type, FloatType},
     },
     profiler::profile,
 };
@@ -100,11 +100,49 @@ enum BinOpInt {
     U_LtEq,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum BinOpFloat {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+}
+
 #[derive(PartialEq)]
 enum BinOpFlag {
     None,
     SwapArgs,
     Assign,
+}
+
+fn bin_op_float(op: syn::BinOp) -> (BinOpFloat, BinOpFlag) {
+    match op {
+        syn::BinOp::Add(_) => (BinOpFloat::Add, BinOpFlag::None),
+        syn::BinOp::AddEq(_) => (BinOpFloat::Add, BinOpFlag::Assign),
+        syn::BinOp::Sub(_) => (BinOpFloat::Sub, BinOpFlag::None),
+        syn::BinOp::SubEq(_) => (BinOpFloat::Sub, BinOpFlag::Assign),
+        syn::BinOp::Mul(_) => (BinOpFloat::Mul, BinOpFlag::None),
+        syn::BinOp::MulEq(_) => (BinOpFloat::Mul, BinOpFlag::Assign),
+        syn::BinOp::Div(_) => (BinOpFloat::Div, BinOpFlag::None),
+        syn::BinOp::DivEq(_) => (BinOpFloat::Div, BinOpFlag::Assign),
+        syn::BinOp::Rem(_) => (BinOpFloat::Rem, BinOpFlag::None),
+        syn::BinOp::RemEq(_) => (BinOpFloat::Rem, BinOpFlag::Assign),
+
+        syn::BinOp::Eq(_) => (BinOpFloat::Eq, BinOpFlag::None),
+        syn::BinOp::Ne(_) => (BinOpFloat::NotEq, BinOpFlag::None),
+        syn::BinOp::Lt(_) => (BinOpFloat::Lt, BinOpFlag::None),
+        syn::BinOp::Le(_) => (BinOpFloat::LtEq, BinOpFlag::None),
+        syn::BinOp::Gt(_) => (BinOpFloat::Gt, BinOpFlag::None),
+        syn::BinOp::Ge(_) => (BinOpFloat::GtEq, BinOpFlag::None),
+        _ => panic!("can not apply {:?} to floats",op)
+    }
 }
 
 fn bin_op_int(op: syn::BinOp, signed: bool) -> (BinOpInt, BinOpFlag) {
@@ -155,7 +193,7 @@ fn bin_op_int(op: syn::BinOp, signed: bool) -> (BinOpInt, BinOpFlag) {
 }
 
 fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr, BinOpFlag) {
-    if arg_ty.is_int() {
+    if arg_ty.is_int() || arg_ty == Type::Bool || arg_ty == Type::Char {
         let (op, flag) = bin_op_int(op, arg_ty.is_signed());
         let width = arg_ty.byte_size();
         let instr = match (width, op) {
@@ -263,6 +301,36 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
         };
 
         (instr, flag)
+    } else if arg_ty.is_float() {
+        let (op, flag) = bin_op_float(op);
+        let instr = match (arg_ty, op) {
+            (Type::Float(FloatType::F64), BinOpFloat::Add) => Instr::F64_Add,
+            (Type::Float(FloatType::F64), BinOpFloat::Sub) => Instr::F64_Sub,
+            (Type::Float(FloatType::F64), BinOpFloat::Mul) => Instr::F64_Mul,
+            (Type::Float(FloatType::F64), BinOpFloat::Div) => Instr::F64_Div,
+            (Type::Float(FloatType::F64), BinOpFloat::Rem) => Instr::F64_Rem,
+            (Type::Float(FloatType::F64), BinOpFloat::Eq) => Instr::F64_Eq,
+            (Type::Float(FloatType::F64), BinOpFloat::NotEq) => Instr::F64_NotEq,
+            (Type::Float(FloatType::F64), BinOpFloat::Lt) => Instr::F64_Lt,
+            (Type::Float(FloatType::F64), BinOpFloat::LtEq) => Instr::F64_LtEq,
+            (Type::Float(FloatType::F64), BinOpFloat::Gt) => Instr::F64_Gt,
+            (Type::Float(FloatType::F64), BinOpFloat::GtEq) => Instr::F64_GtEq,
+
+            (Type::Float(FloatType::F32), BinOpFloat::Add) => Instr::F32_Add,
+            (Type::Float(FloatType::F32), BinOpFloat::Sub) => Instr::F32_Sub,
+            (Type::Float(FloatType::F32), BinOpFloat::Mul) => Instr::F32_Mul,
+            (Type::Float(FloatType::F32), BinOpFloat::Div) => Instr::F32_Div,
+            (Type::Float(FloatType::F32), BinOpFloat::Rem) => Instr::F32_Rem,
+            (Type::Float(FloatType::F32), BinOpFloat::Eq) => Instr::F32_Eq,
+            (Type::Float(FloatType::F32), BinOpFloat::NotEq) => Instr::F32_NotEq,
+            (Type::Float(FloatType::F32), BinOpFloat::Lt) => Instr::F32_Lt,
+            (Type::Float(FloatType::F32), BinOpFloat::LtEq) => Instr::F32_LtEq,
+            (Type::Float(FloatType::F32), BinOpFloat::Gt) => Instr::F32_Gt,
+            (Type::Float(FloatType::F32), BinOpFloat::GtEq) => Instr::F32_GtEq,
+
+            _ => panic!("binop nyi {:?} {:?}", arg_ty, op),
+        };
+        (instr,flag)
     } else {
         panic!("todo more bin ops");
     }
@@ -287,6 +355,18 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
             (syn::UnOp::Neg(_), 16) => Instr::I128_Neg,
             (syn::UnOp::Not(_), 16) => Instr::I128_Not,
             _ => panic!("todo un-op int {:?} {:?}", op, ty),
+        }
+    } else if ty.is_float() {
+        match (op, ty) {
+            (syn::UnOp::Neg(_), Type::Float(FloatType::F64)) => Instr::F64_Neg,
+            (syn::UnOp::Neg(_), Type::Float(FloatType::F32)) => Instr::F32_Neg,
+            _ => panic!("un-op float {:?} {:?}",op,ty)
+        }
+    } else if ty == Type::Bool {
+        if let syn::UnOp::Not(_) = op {
+            Instr::Bool_Not
+        } else {
+            panic!("un-op bool {:?}",op);
         }
     } else {
         panic!("todo un-op {:?}",ty);
@@ -349,6 +429,20 @@ impl<'a> BCompiler<'a> {
                 self.frame = saved_frame; // reset stack
                 None
             }
+            Expr::LitBool(val) => {
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                if let Some(dest_slot) = dest_slot {
+                    self.push_code(Instr::I8_Const(dest_slot, *val as i8));
+                }
+                dest_slot
+            }
+            Expr::LitChar(val) => {
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                if let Some(dest_slot) = dest_slot {
+                    self.push_code(Instr::I32_Const(dest_slot, *val as i32));
+                }
+                dest_slot
+            }
             Expr::LitInt(n) => {
                 let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
                 if let Some(dest_slot) = dest_slot {
@@ -377,11 +471,22 @@ impl<'a> BCompiler<'a> {
                 }
                 dest_slot
             }
+            Expr::LitFloat(n) => {
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                if let Some(dest_slot) = dest_slot {
+                    match ty {
+                        Type::Float(FloatType::F64) => self.push_code(Instr::F64_Const(dest_slot, *n as f64)),
+                        Type::Float(FloatType::F32) => self.push_code(Instr::F32_Const(dest_slot, *n as f32)),
+                        _ => panic!("todo more literal floats")
+                    }
+                }
+                dest_slot
+            }
             Expr::CastPrimitive(src) => {
                 let src_ty = self.input_fn.exprs[*src as usize].ty;
                 let res_ty = ty;
 
-                if src_ty.is_int() && res_ty.is_int() {
+                if (src_ty.is_int() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int() {
                     let src_width = src_ty.byte_size();
                     let res_width = res_ty.byte_size();
 
@@ -425,6 +530,34 @@ impl<'a> BCompiler<'a> {
                         // no-op
                         self.lower_expr(*src, mandatory_dest_slot)
                     }
+                } else if src_ty.is_float() && res_ty.is_float() {
+                    if src_ty == *res_ty {
+                        // no-op
+                        self.lower_expr(*src, mandatory_dest_slot)
+                    } else if *res_ty == Type::Float(FloatType::F64) {
+                        let src_slot = self.lower_expr(*src, None).unwrap();
+                        self.frame = saved_frame; // arg ready, reset stack
+                        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                        let ins = Instr::F64_From_F32(dest_slot.unwrap(), src_slot);
+                        self.push_code(ins);
+                        dest_slot
+                    } else if *res_ty == Type::Float(FloatType::F32) {
+                        let src_slot = self.lower_expr(*src, None).unwrap();
+                        self.frame = saved_frame; // arg ready, reset stack
+                        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                        let ins = Instr::F32_From_F64(dest_slot.unwrap(), src_slot);
+                        self.push_code(ins);
+                        dest_slot
+                    } else {
+                        panic!("cast {:?} -> {:?}", src_ty, res_ty);
+                    }
+                } else if src_ty == Type::Int(IntType::U8) && *res_ty == Type::Char {
+                    let src_slot = self.lower_expr(*src, None).unwrap();
+                    self.frame = saved_frame; // arg ready, reset stack
+                    let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                    let ins = Instr::I32_U_Widen_8(dest_slot.unwrap(), src_slot);
+                    self.push_code(ins);
+                    dest_slot
                 } else {
                     panic!("cast {:?} -> {:?}", src_ty, res_ty);
                 }
@@ -472,10 +605,20 @@ impl<'a> BCompiler<'a> {
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_uint(arg_slot));
                     None
+                } else if name == "print_float" {
+                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    self.frame = saved_frame; // args ready, reset stack
+                    self.push_code(Instr::BuiltIn_print_float(arg_slot));
+                    None
                 } else if name == "print_bool" {
                     let arg_slot = self.lower_expr(args[0], None).unwrap();
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_bool(arg_slot));
+                    None
+                } else if name == "print_char" {
+                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    self.frame = saved_frame; // args ready, reset stack
+                    self.push_code(Instr::BuiltIn_print_char(arg_slot));
                     None
                 } else {
                     panic!("unknown builtin");
@@ -529,6 +672,7 @@ impl<'a> BCompiler<'a> {
     }
 
     fn insert_move(&mut self, dest: u32, src: u32, ty: Type) {
+        // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
         let align = ty.byte_align();
 

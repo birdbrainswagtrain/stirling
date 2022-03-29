@@ -5,13 +5,13 @@
 
 ### Types
 - **Integers:** Literals, arithmetic, bitwise, comparisons.
+- **Floats**: Literals, arithmetic, comparisons.
+- **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality. **TODO logical**
+- **Chars**: Literals, comparisons.
 
 =================================
 **Not Ported to New Interpreter**
 
-- **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality.
-- **Floats**: Literals, arithmetic, comparisons.
-- **Chars**: Literals, comparisons.
 - **References**: Scalar types can be reference and dereferenced.
 
 ### As-Casts

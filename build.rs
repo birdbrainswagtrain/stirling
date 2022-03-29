@@ -61,6 +61,16 @@ fn write_widen(dst_bits: i32, src_bits: i32, signed: bool, source: &mut String) 
     }}"));
 }
 
+fn write_cast(name: &str, dst_ty: &str, src_ty: &str, source: &mut String) {
+    source.push_str(&format!(
+        "
+    Instr::{name}(out, src) => {{
+        let x: {src_ty} = read_stack(stack, src);
+        let res = x as {dst_ty};
+        write_stack(stack, out, res);
+    }}"));
+}
+
 fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     let big = signed.to_uppercase();
 
@@ -105,6 +115,25 @@ fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     write_shift(&format!("{}_U_ShiftR",big), unsigned, "a.wrapping_shr(b as _)", source);
 }
 
+fn write_float_ops(ty: &str, source: &mut String) {
+    let big = ty.to_uppercase();
+    write_immediate(&format!("{}_Const",big), ty, "x", source);
+    write_unary(&format!("{}_Neg",big), ty, "-x", source);
+    write_binary(&format!("{}_Add",big), ty, "a + b", source);
+    write_binary(&format!("{}_Sub",big), ty, "a - b", source);
+    write_binary(&format!("{}_Mul",big), ty, "a * b", source);
+    write_binary(&format!("{}_Div",big), ty, "a / b", source);
+    write_binary(&format!("{}_Rem",big), ty, "a % b", source);
+
+    write_binary(&format!("{}_Eq",big), ty, "a == b", source);
+    write_binary(&format!("{}_NotEq",big), ty, "a != b", source);
+
+    write_binary(&format!("{}_Lt",big), ty, "a < b", source);
+    write_binary(&format!("{}_LtEq",big), ty, "a <= b", source);
+    write_binary(&format!("{}_Gt",big), ty, "a > b", source);
+    write_binary(&format!("{}_GtEq",big), ty, "a >= b", source);
+}
+
 fn write_exec_match() {
     let mut source = String::new();
     source.push_str("match instr {");
@@ -114,6 +143,16 @@ fn write_exec_match() {
     write_int_ops("i32","u32",&mut source);
     write_int_ops("i64","u64",&mut source);
     write_int_ops("i128","u128",&mut source);
+
+    write_float_ops("f64",&mut source);
+    write_float_ops("f32",&mut source);
+
+    // Integer bitwise not won't work for bools
+    write_unary("Bool_Not", "bool", "!x", &mut source);
+
+    // float casts
+    write_cast("F64_From_F32","f64","f32",&mut source);
+    write_cast("F32_From_F64","f32","f64",&mut source);
 
     // widening operations
     write_widen(16,8,true,&mut source);
@@ -163,9 +202,17 @@ fn write_exec_match() {
         let arg: u128 = read_stack(stack, arg);
         crate::builtin::print_uint(arg);
     }
+    Instr::BuiltIn_print_float(arg) => {
+        let arg: f64 = read_stack(stack, arg);
+        crate::builtin::print_float(arg);
+    }
     Instr::BuiltIn_print_bool(arg) => {
         let arg: bool = read_stack(stack, arg);
         crate::builtin::print_bool(arg);
+    }
+    Instr::BuiltIn_print_char(arg) => {
+        let arg: char = read_stack(stack, arg);
+        crate::builtin::print_char(arg);
     }
     _ => panic!("NYI {:?}",instr)
 }"#,

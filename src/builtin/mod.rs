@@ -29,10 +29,24 @@ pub static BUILTINS: Lazy<HashMap<&'static str, (usize, Signature)>> = Lazy::new
         ),
     );
     m.insert(
+        "print_float",
+        (
+            builtin::print_float as _,
+            Signature::new(vec![Type::Float(FloatType::F64)], Type::Void),
+        ),
+    );
+    m.insert(
         "print_bool",
         (
             builtin::print_bool as _,
             Signature::new(vec![Type::Bool], Type::Void),
+        ),
+    );
+    m.insert(
+        "print_char",
+        (
+            builtin::print_char as _,
+            Signature::new(vec![Type::Char], Type::Void),
         ),
     );
     /*m.insert(
