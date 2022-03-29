@@ -116,6 +116,14 @@ fn write_exec_match() {
     write_int_ops("i128","u128",&mut source);
 
     // widening operations
+    write_widen(16,8,true,&mut source);
+    write_widen(16,8,false,&mut source);
+
+    write_widen(32,16,true,&mut source);
+    write_widen(32,16,false,&mut source);
+    write_widen(32,8,true,&mut source);
+    write_widen(32,8,false,&mut source);
+
     write_widen(64,32,true,&mut source);
     write_widen(64,32,false,&mut source);
     write_widen(64,16,true,&mut source);

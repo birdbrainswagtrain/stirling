@@ -669,6 +669,36 @@ match instr {
         let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
+    Instr::I16_S_Widen_8(out, src) => {
+        let x: i8 = read_stack(stack, src);
+        let res = x as i16;
+        write_stack(stack, out, res);
+    }
+    Instr::I16_U_Widen_8(out, src) => {
+        let x: u8 = read_stack(stack, src);
+        let res = x as u16;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_Widen_16(out, src) => {
+        let x: i16 = read_stack(stack, src);
+        let res = x as i32;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_Widen_16(out, src) => {
+        let x: u16 = read_stack(stack, src);
+        let res = x as u32;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_S_Widen_8(out, src) => {
+        let x: i8 = read_stack(stack, src);
+        let res = x as i32;
+        write_stack(stack, out, res);
+    }
+    Instr::I32_U_Widen_8(out, src) => {
+        let x: u8 = read_stack(stack, src);
+        let res = x as u32;
+        write_stack(stack, out, res);
+    }
     Instr::I64_S_Widen_32(out, src) => {
         let x: i32 = read_stack(stack, src);
         let res = x as i64;
