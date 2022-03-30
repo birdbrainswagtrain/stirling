@@ -60,6 +60,9 @@ fn main() {
         _builtin::print_float(-a as f32 as f64);
         _builtin::print_float(-b as f32 as f64);
         _builtin::print_float(-c as f32 as f64);
+
+        let huge: u128 = 340282366920938463463374607431768211455;
+        _builtin::print_float(huge as f32 as f64);
     }
 
     // float -> int

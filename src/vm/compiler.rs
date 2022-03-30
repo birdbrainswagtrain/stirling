@@ -486,14 +486,15 @@ impl<'a> BCompiler<'a> {
                 let src_ty = self.input_fn.exprs[*src as usize].ty;
                 let res_ty = ty;
 
-                if (src_ty.is_int() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int() {
+                let cast_ins_ctor: Option<fn(u32,u32)->Instr> = if src_ty == *res_ty {
+                    None
+                } else if (src_ty.is_int() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int() {
                     let src_width = src_ty.byte_size();
                     let res_width = res_ty.byte_size();
 
                     if src_width < res_width {
                         let signed = src_ty.is_signed();
-                        let src_slot = self.lower_expr(*src, None).unwrap();
-                        let ins_ctor = match (src_width, res_width, signed) {
+                        Some(match (src_width, res_width, signed) {
 
                             (1, 2, true) => Instr::I16_S_Widen_8,
                             (1, 2, false) => Instr::I16_U_Widen_8,
@@ -520,46 +521,73 @@ impl<'a> BCompiler<'a> {
                             (8, 16, false) => Instr::I128_U_Widen_64,
 
                             _ => panic!("todo widen {} {} {}", src_width, res_width, signed),
-                        };
-                        self.frame = saved_frame; // arg ready, reset stack
-                        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                        let ins = ins_ctor(dest_slot.unwrap(), src_slot);
-                        self.push_code(ins);
-                        dest_slot
+                        })
                     } else {
-                        // no-op
-                        self.lower_expr(*src, mandatory_dest_slot)
+                        None
                     }
-                } else if src_ty.is_float() && res_ty.is_float() {
-                    if src_ty == *res_ty {
-                        // no-op
-                        self.lower_expr(*src, mandatory_dest_slot)
-                    } else if *res_ty == Type::Float(FloatType::F64) {
-                        let src_slot = self.lower_expr(*src, None).unwrap();
-                        self.frame = saved_frame; // arg ready, reset stack
-                        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                        let ins = Instr::F64_From_F32(dest_slot.unwrap(), src_slot);
-                        self.push_code(ins);
-                        dest_slot
-                    } else if *res_ty == Type::Float(FloatType::F32) {
-                        let src_slot = self.lower_expr(*src, None).unwrap();
-                        self.frame = saved_frame; // arg ready, reset stack
-                        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                        let ins = Instr::F32_From_F64(dest_slot.unwrap(), src_slot);
-                        self.push_code(ins);
-                        dest_slot
-                    } else {
-                        panic!("cast {:?} -> {:?}", src_ty, res_ty);
-                    }
-                } else if src_ty == Type::Int(IntType::U8) && *res_ty == Type::Char {
+                } else {
+                    Some(match (src_ty,res_ty) {
+                        (Type::Int(IntType::U8), Type::Char) => Instr::I32_U_Widen_8,
+                        (Type::Float(FloatType::F64), Type::Float(FloatType::F32)) => Instr::F32_From_F64,
+                        (Type::Float(FloatType::F32), Type::Float(FloatType::F64)) => Instr::F64_From_F32,
+
+                        (Type::Int(IntType::I8), Type::Float(FloatType::F32)) => Instr::F32_From_I8_S,
+                        (Type::Int(IntType::U8), Type::Float(FloatType::F32)) => Instr::F32_From_I8_U,
+                        (Type::Int(IntType::I16), Type::Float(FloatType::F32)) => Instr::F32_From_I16_S,
+                        (Type::Int(IntType::U16), Type::Float(FloatType::F32)) => Instr::F32_From_I16_U,
+                        (Type::Int(IntType::I32), Type::Float(FloatType::F32)) => Instr::F32_From_I32_S,
+                        (Type::Int(IntType::U32), Type::Float(FloatType::F32)) => Instr::F32_From_I32_U,
+                        (Type::Int(IntType::I64), Type::Float(FloatType::F32)) => Instr::F32_From_I64_S,
+                        (Type::Int(IntType::U64), Type::Float(FloatType::F32)) => Instr::F32_From_I64_U,
+                        (Type::Int(IntType::I128), Type::Float(FloatType::F32)) => Instr::F32_From_I128_S,
+                        (Type::Int(IntType::U128), Type::Float(FloatType::F32)) => Instr::F32_From_I128_U,
+
+                        (Type::Int(IntType::I8), Type::Float(FloatType::F64)) => Instr::F64_From_I8_S,
+                        (Type::Int(IntType::U8), Type::Float(FloatType::F64)) => Instr::F64_From_I8_U,
+                        (Type::Int(IntType::I16), Type::Float(FloatType::F64)) => Instr::F64_From_I16_S,
+                        (Type::Int(IntType::U16), Type::Float(FloatType::F64)) => Instr::F64_From_I16_U,
+                        (Type::Int(IntType::I32), Type::Float(FloatType::F64)) => Instr::F64_From_I32_S,
+                        (Type::Int(IntType::U32), Type::Float(FloatType::F64)) => Instr::F64_From_I32_U,
+                        (Type::Int(IntType::I64), Type::Float(FloatType::F64)) => Instr::F64_From_I64_S,
+                        (Type::Int(IntType::U64), Type::Float(FloatType::F64)) => Instr::F64_From_I64_U,
+                        (Type::Int(IntType::I128), Type::Float(FloatType::F64)) => Instr::F64_From_I128_S,
+                        (Type::Int(IntType::U128), Type::Float(FloatType::F64)) => Instr::F64_From_I128_U,
+
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I8)) => Instr::F32_Into_I8_S,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U8)) => Instr::F32_Into_I8_U,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I16)) => Instr::F32_Into_I16_S,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U16)) => Instr::F32_Into_I16_U,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I32)) => Instr::F32_Into_I32_S,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U32)) => Instr::F32_Into_I32_U,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I64)) => Instr::F32_Into_I64_S,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U64)) => Instr::F32_Into_I64_U,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I128)) => Instr::F32_Into_I128_S,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U128)) => Instr::F32_Into_I128_U,
+
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I8)) => Instr::F64_Into_I8_S,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U8)) => Instr::F64_Into_I8_U,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I16)) => Instr::F64_Into_I16_S,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U16)) => Instr::F64_Into_I16_U,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I32)) => Instr::F64_Into_I32_S,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U32)) => Instr::F64_Into_I32_U,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I64)) => Instr::F64_Into_I64_S,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U64)) => Instr::F64_Into_I64_U,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I128)) => Instr::F64_Into_I128_S,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U128)) => Instr::F64_Into_I128_U,
+
+                        _ => panic!("cast {:?} -> {:?}", src_ty, res_ty)
+                    })
+                };
+                if let Some(cast_ins_ctor) = cast_ins_ctor {
                     let src_slot = self.lower_expr(*src, None).unwrap();
                     self.frame = saved_frame; // arg ready, reset stack
                     let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                    let ins = Instr::I32_U_Widen_8(dest_slot.unwrap(), src_slot);
+                    let ins = cast_ins_ctor(dest_slot.unwrap(), src_slot);
                     self.push_code(ins);
                     dest_slot
                 } else {
-                    panic!("cast {:?} -> {:?}", src_ty, res_ty);
+                    // no-op cast
+                    self.lower_expr(*src, mandatory_dest_slot)
                 }
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => {

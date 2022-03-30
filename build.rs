@@ -152,7 +152,50 @@ fn write_exec_match() {
 
     // float casts
     write_cast("F64_From_F32","f64","f32",&mut source);
+    write_cast("F64_From_I8_S","f64","i8",&mut source);
+    write_cast("F64_From_I8_U","f64","u8",&mut source);
+    write_cast("F64_From_I16_S","f64","i16",&mut source);
+    write_cast("F64_From_I16_U","f64","u16",&mut source);
+    write_cast("F64_From_I32_S","f64","i32",&mut source);
+    write_cast("F64_From_I32_U","f64","u32",&mut source);
+    write_cast("F64_From_I64_S","f64","i64",&mut source);
+    write_cast("F64_From_I64_U","f64","u64",&mut source);
+    write_cast("F64_From_I128_S","f64","i128",&mut source);
+    write_cast("F64_From_I128_U","f64","u128",&mut source);
+
+    write_cast("F64_Into_I8_S","i8","f64",&mut source);
+    write_cast("F64_Into_I8_U","u8","f64",&mut source);
+    write_cast("F64_Into_I16_S","i16","f64",&mut source);
+    write_cast("F64_Into_I16_U","u16","f64",&mut source);
+    write_cast("F64_Into_I32_S","i32","f64",&mut source);
+    write_cast("F64_Into_I32_U","u32","f64",&mut source);
+    write_cast("F64_Into_I64_S","i64","f64",&mut source);
+    write_cast("F64_Into_I64_U","u64","f64",&mut source);
+    write_cast("F64_Into_I128_S","i128","f64",&mut source);
+    write_cast("F64_Into_I128_U","u128","f64",&mut source);
+    
     write_cast("F32_From_F64","f32","f64",&mut source);
+    write_cast("F32_From_I8_S","f32","i8",&mut source);
+    write_cast("F32_From_I8_U","f32","u8",&mut source);
+    write_cast("F32_From_I16_S","f32","i16",&mut source);
+    write_cast("F32_From_I16_U","f32","u16",&mut source);
+    write_cast("F32_From_I32_S","f32","i32",&mut source);
+    write_cast("F32_From_I32_U","f32","u32",&mut source);
+    write_cast("F32_From_I64_S","f32","i64",&mut source);
+    write_cast("F32_From_I64_U","f32","u64",&mut source);
+    write_cast("F32_From_I128_S","f32","i128",&mut source);
+    write_cast("F32_From_I128_U","f32","u128",&mut source);
+
+    write_cast("F32_Into_I8_S","i8","f32",&mut source);
+    write_cast("F32_Into_I8_U","u8","f32",&mut source);
+    write_cast("F32_Into_I16_S","i16","f32",&mut source);
+    write_cast("F32_Into_I16_U","u16","f32",&mut source);
+    write_cast("F32_Into_I32_S","i32","f32",&mut source);
+    write_cast("F32_Into_I32_U","u32","f32",&mut source);
+    write_cast("F32_Into_I64_S","i64","f32",&mut source);
+    write_cast("F32_Into_I64_U","u64","f32",&mut source);
+    write_cast("F32_Into_I128_S","i128","f32",&mut source);
+    write_cast("F32_Into_I128_U","u128","f32",&mut source);
 
     // widening operations
     write_widen(16,8,true,&mut source);
