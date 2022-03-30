@@ -20,10 +20,10 @@ pub fn main() {
         let d = a;
         a + b + c + d
     });
-    _builtin::print_i32(x);
+    _builtin::print_int(x);
 
     let y = { 11 + 100 };
-    _builtin::print_i32(y);
+    _builtin::print_int(y);
 
-    _builtin::print_i32({1 + 2 + 4 + 8});
+    _builtin::print_int({1 + 2 + 4 + 8});
 }
