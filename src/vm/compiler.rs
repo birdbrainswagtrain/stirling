@@ -661,13 +661,51 @@ impl<'a> BCompiler<'a> {
                 let pc_cond_jump = self.code.len();
                 self.frame = saved_frame; // cond_read, reset stack
                 self.push_code(Instr::Bad);
+
                 let block_res = self.lower_block(body, Type::Void, None);
                 assert!(block_res.is_none());
                 let pc_end = self.code.len() as i32;
                 self.push_code(Instr::Jump(pc_start - pc_end));
+                // need to offset + 1 to make it past the end
                 self.code[pc_cond_jump] =
                     Instr::JumpF(pc_end - pc_cond_jump as i32 + 1, cond_slot.unwrap());
                 None
+            }
+            Expr::If(cond,then_block,else_expr) => {
+
+                let cond_slot = self.frame.alloc(Type::Bool);
+                self.lower_expr(*cond, cond_slot);
+                let pc_jump_then = self.code.len();
+                self.frame = saved_frame; // cond_read, reset stack
+                self.push_code(Instr::Bad);
+
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let saved_frame = self.frame;
+
+                self.lower_block(then_block, *ty, dest_slot);
+                
+                if let Some(else_expr) = else_expr {
+                    let pc_jump_else = self.code.len();
+                    self.push_code(Instr::Bad);
+
+                    let pc_end_then = self.code.len() as i32;
+                    
+                    self.lower_expr(*else_expr, dest_slot);
+                    
+                    let pc_end_else = self.code.len() as i32;
+
+                    self.code[pc_jump_then] =
+                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot.unwrap());
+                    self.code[pc_jump_else] =
+                        Instr::Jump(pc_end_else - pc_jump_else as i32);
+                } else {
+                    let pc_end_then = self.code.len() as i32;
+                    self.code[pc_jump_then] =
+                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot.unwrap());
+                }
+                
+                self.frame = saved_frame;
+                dest_slot
             }
             _ => panic!("vm compile {:?}", expr),
         };
@@ -686,8 +724,8 @@ impl<'a> BCompiler<'a> {
         mandatory_dest_slot: Option<u32>,
     ) -> Option<u32> {
         let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(ty));
-
         let saved_frame = self.frame;
+
         for expr_id in &block.stmts {
             self.lower_expr(*expr_id, None);
         }

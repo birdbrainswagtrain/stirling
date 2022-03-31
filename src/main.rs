@@ -74,7 +74,6 @@ fn main() {
     if args.profile {
         profile_log();
     }
-    println!("end of main");
 }
 
 fn check_abi() {
