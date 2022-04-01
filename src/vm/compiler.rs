@@ -21,6 +21,11 @@ struct LoopJump {
     instr_index: usize,
 }
 
+struct LoopResult {
+    loop_id: u32,
+    slot: Option<u32>
+}
+
 #[derive(Clone, Copy, Default)]
 struct FrameAllocator(u32);
 
@@ -67,7 +72,8 @@ pub fn compile(func: &Function) -> Vec<Instr> {
             code_frame_depth: Vec::new(),
             input_fn,
             frame,
-            loop_jumps: Vec::new()
+            loop_jumps: Vec::new(),
+            loop_results: Vec::new()
         };
 
         compiler.lower_expr(input_fn.root_expr as u32, return_slot);
@@ -86,7 +92,8 @@ struct BCompiler<'a> {
     code_frame_depth: Vec<u32>,
     input_fn: &'a FuncHIR,
     frame: FrameAllocator,
-    loop_jumps: Vec<LoopJump>
+    loop_jumps: Vec<LoopJump>,
+    loop_results: Vec<LoopResult>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -403,6 +410,15 @@ impl<'a> BCompiler<'a> {
         });
     }
 
+    fn get_loop_result(&self, loop_id: u32) -> Option<u32> {
+        for entry in &self.loop_results {
+            if entry.loop_id == loop_id {
+                return entry.slot;
+            }
+        }
+        panic!("no result for loop {}",loop_id);
+    }
+
     fn push_code(&mut self, ins: Instr) {
         assert_eq!(self.code.len(), self.code_frame_depth.len());
         self.code.push(ins);
@@ -449,6 +465,9 @@ impl<'a> BCompiler<'a> {
                 let assign_dest_slot = self.get_assign_dest(*dest, mandatory_dest_slot);
                 self.lower_expr(*src, assign_dest_slot);
                 self.frame = saved_frame; // reset stack
+                None
+            }
+            Expr::LitVoid => {
                 None
             }
             Expr::LitBool(val) => {
@@ -675,8 +694,11 @@ impl<'a> BCompiler<'a> {
                 }
             }
             Expr::Block(block) => self.lower_block(block, *ty, mandatory_dest_slot),
-            Expr::Break(loop_id, val) => {
-                assert!(val.is_none());
+            Expr::Break(loop_id, break_expr) => {
+                if let Some(break_expr) = break_expr {
+                    let dest_slot = self.get_loop_result(*loop_id);
+                    self.lower_expr(*break_expr, dest_slot);
+                }
                 let instr_index = self.code.len();
                 self.push_code(Instr::Bad);
                 self.loop_jumps.push(LoopJump{
@@ -713,6 +735,24 @@ impl<'a> BCompiler<'a> {
                 self.code[pc_cond_jump] =
                     Instr::JumpF(pc_end - pc_cond_jump as i32 + 1, cond_slot.unwrap());
 
+                self.resolve_loop_jumps(expr_id, pc_start, pc_end + 1);
+
+                None
+            }
+            Expr::Loop(body) => {
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                self.loop_results.push(LoopResult {
+                    loop_id: expr_id,
+                    slot: dest_slot
+                });
+
+                let pc_start = self.code.len() as i32;
+                let block_res = self.lower_block(body, Type::Void, None);
+                assert!(block_res.is_none());
+                let pc_end = self.code.len() as i32;
+                self.push_code(Instr::Jump(pc_start - pc_end));
+
+                self.loop_results.pop();
                 self.resolve_loop_jumps(expr_id, pc_start, pc_end + 1);
 
                 None
@@ -755,8 +795,8 @@ impl<'a> BCompiler<'a> {
             }
             _ => panic!("vm compile {:?}", expr),
         };
-        //self.frame = saved_frame;
-        if mandatory_dest_slot.is_some() {
+        // NOTE: Never results can yield None even with a mandatory result.
+        if mandatory_dest_slot.is_some() && res_slot.is_some() {
             assert_eq!(mandatory_dest_slot, res_slot);
         }
 
