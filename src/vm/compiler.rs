@@ -9,6 +9,18 @@ use crate::{
 
 use super::instr::Instr;
 
+#[derive(PartialEq)]
+enum LoopJumpKind{
+    Break,
+    Continue
+}
+
+struct LoopJump {
+    kind: LoopJumpKind,
+    loop_id: u32,
+    instr_index: usize,
+}
+
 #[derive(Clone, Copy, Default)]
 struct FrameAllocator(u32);
 
@@ -55,6 +67,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
             code_frame_depth: Vec::new(),
             input_fn,
             frame,
+            loop_jumps: Vec::new()
         };
 
         compiler.lower_expr(input_fn.root_expr as u32, return_slot);
@@ -62,6 +75,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
         if crate::VERBOSE {
             compiler.dump();
         }
+        assert_eq!(compiler.loop_jumps.len(), 0);
         compiler.code
     })
 }
@@ -72,6 +86,7 @@ struct BCompiler<'a> {
     code_frame_depth: Vec<u32>,
     input_fn: &'a FuncHIR,
     frame: FrameAllocator,
+    loop_jumps: Vec<LoopJump>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -374,13 +389,20 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
 }
 
 impl<'a> BCompiler<'a> {
-    /*fn lower_expr_enforce_destination(&mut self, expr_id: u32, dest_slot: Option<u32>) {
-        let dest_actual = self.lower_expr(expr_id,dest_slot);
-        if dest_actual != dest_slot {
-            let ty = self.input_fn.exprs[expr_id as usize].ty;
-            self.insert_move(dest_slot.unwrap(),dest_actual.unwrap(),ty);
-        }
-    }*/
+    fn resolve_loop_jumps(&mut self, loop_id: u32, continue_pc: i32, break_pc: i32) {
+        self.loop_jumps.retain(|jump| {
+            if jump.loop_id == loop_id {
+                if jump.kind == LoopJumpKind::Break {
+                    self.code[jump.instr_index] = Instr::Jump(break_pc - jump.instr_index as i32);
+                } else {
+                    self.code[jump.instr_index] = Instr::Jump(continue_pc - jump.instr_index as i32);
+                }
+                return false;
+            }
+            true
+        });
+    }
+
     fn push_code(&mut self, ins: Instr) {
         assert_eq!(self.code.len(), self.code_frame_depth.len());
         self.code.push(ins);
@@ -653,6 +675,27 @@ impl<'a> BCompiler<'a> {
                 }
             }
             Expr::Block(block) => self.lower_block(block, *ty, mandatory_dest_slot),
+            Expr::Break(loop_id, val) => {
+                assert!(val.is_none());
+                let instr_index = self.code.len();
+                self.push_code(Instr::Bad);
+                self.loop_jumps.push(LoopJump{
+                    kind: LoopJumpKind::Break,
+                    loop_id: *loop_id,
+                    instr_index
+                });
+                None
+            }
+            Expr::Continue(loop_id) => {
+                let instr_index = self.code.len();
+                self.push_code(Instr::Bad);
+                self.loop_jumps.push(LoopJump{
+                    kind: LoopJumpKind::Continue,
+                    loop_id: *loop_id,
+                    instr_index
+                });
+                None
+            }
             Expr::While(cond, body) => {
                 assert!(mandatory_dest_slot.is_none());
                 let pc_start = self.code.len() as i32;
@@ -669,6 +712,9 @@ impl<'a> BCompiler<'a> {
                 // need to offset + 1 to make it past the end
                 self.code[pc_cond_jump] =
                     Instr::JumpF(pc_end - pc_cond_jump as i32 + 1, cond_slot.unwrap());
+
+                self.resolve_loop_jumps(expr_id, pc_start, pc_end + 1);
+
                 None
             }
             Expr::If(cond,then_block,else_expr) => {
