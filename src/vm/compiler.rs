@@ -43,6 +43,14 @@ impl FrameAllocator {
         self.0 += size;
         Some(offset)
     }
+
+    fn align_for_call(&mut self) -> u32 {
+        let align = 16;
+        while self.0 % align != 0 {
+            self.0 += 1;
+        }
+        self.0
+    }
 }
 
 pub fn compile(func: &Function) -> Vec<Instr> {
@@ -792,6 +800,33 @@ impl<'a> BCompiler<'a> {
                 
                 self.frame = saved_frame;
                 dest_slot
+            }
+            Expr::Call(func, args) => {
+
+                let saved_frame_pre = self.frame;
+                let call_base = self.frame.align_for_call();
+                let sig = func.sig();
+                let res_slot = self.frame.alloc(sig.output);
+
+                let saved_frame_res = self.frame;
+                for (ty,ex) in sig.inputs.iter().zip(args.iter()) {
+                    let slot = self.frame.alloc(*ty);
+                    self.lower_expr(*ex, slot);
+                }
+                self.frame = saved_frame_res;
+
+                self.push_code(Instr::Call(call_base, func));
+
+                if let Some(mandatory_dest_slot) = mandatory_dest_slot {
+                    if let Some(res_slot) = res_slot {
+                        self.insert_move(mandatory_dest_slot, res_slot, *ty);
+                    }
+
+                    self.frame = saved_frame_pre;
+                    Some(mandatory_dest_slot)
+                } else {
+                    res_slot
+                }
             }
             _ => panic!("vm compile {:?}", expr),
         };

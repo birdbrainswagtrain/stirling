@@ -3,6 +3,8 @@ use std::{cell::Cell, collections::HashMap};
 use once_cell::sync::OnceCell;
 use std::cell::RefCell;
 
+use crate::vm::Instr;
+
 use super::func::FuncHIR;
 use super::types::Signature;
 
@@ -22,8 +24,9 @@ impl Item {
                 let name = ItemName::Value(base_name);
 
                 let func = Box::new(Function {
-                    debug_name,
                     c_fn: Cell::new(std::ptr::null()),
+                    bytecode: OnceCell::new(),
+                    debug_name,
 
                     syn_fn,
                     parent_scope: scope,
@@ -48,6 +51,7 @@ impl Item {
 #[repr(C)]
 pub struct Function {
     pub c_fn: Cell<*const u8>,
+    pub bytecode: OnceCell<Vec<Instr>>,
     pub debug_name: String,
 
     syn_fn: syn::ItemFn,

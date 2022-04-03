@@ -13,7 +13,7 @@ use crate::jit::jit_compile;
 use clap::Parser;
 use memoffset::offset_of;
 use profiler::{profile, profile_log};
-use vm::exec;
+use vm::exec_main;
 
 const PTR_WIDTH: usize = 8;
 
@@ -60,7 +60,7 @@ fn main() {
 
     if let Item::Fn(func) = module.get(&ItemName::Value("main".into())).unwrap() {
         if USE_VM {
-            exec(func);
+            exec_main(func);
         } else {
             jit_compile(func);
 
@@ -79,6 +79,7 @@ fn main() {
 fn check_abi() {
     assert_eq!(std::mem::size_of::<usize>(), PTR_WIDTH);
     assert_eq!(offset_of!(Function, c_fn), 0);
+    assert_eq!(std::mem::size_of::<crate::vm::Instr>(),16);
 }
 
 fn gather_tests(dir_name: &str, files: &mut Vec<PathBuf>) {

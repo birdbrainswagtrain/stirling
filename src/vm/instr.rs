@@ -1,3 +1,5 @@
+use crate::hir::item::Function;
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Copy, Clone)]
 #[repr(u16)]
@@ -224,6 +226,8 @@ pub enum Instr {
 
     Jump(i32),
     JumpF(i32, u32),
+
+    Call(u32, &'static Function),
 
     Return,
     Bad,

@@ -1147,6 +1147,10 @@ match instr {
     }
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::Return => break,
+    Instr::Call(base,func) => {
+        crate::vm::exec(func,stack.offset(base as isize));
+        //panic!("call please");
+    }
     Instr::BuiltIn_print_int(arg) => {
         let arg: i128 = read_stack(stack, arg);
         crate::builtin::print_int(arg);
