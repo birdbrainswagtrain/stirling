@@ -7,7 +7,11 @@ pub fn main() {
         if i > 100 {
             let m = break;
         }
-        i = continue;
+        i = if true {
+            continue
+        } else {
+            123
+        };
         i += 10000;
     }
     _builtin::print_int(i);
