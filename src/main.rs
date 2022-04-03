@@ -125,7 +125,7 @@ fn test(dir_name: &str) -> ! {
         } else {
             "OKAY".green()
         };
-        println!("{:30} {}",file.to_str().unwrap(),res_str);
+        println!("{:35} {}",file.to_str().unwrap(),res_str);
     }
 
     profile_log();
