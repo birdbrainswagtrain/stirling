@@ -1,8 +1,8 @@
-mod _skitter_builtin;
+mod _builtin;
 
 fn f(x: (), y: (), z:(), n: f64, m: i64) -> () {
-    _skitter_builtin::print_f64(n);
-    _skitter_builtin::print_i64(m);
+    _builtin::print_float(n);
+    _builtin::print_int(m as _);
 }
 
 fn main() {

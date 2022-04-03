@@ -5,6 +5,7 @@ mod jit;
 mod profiler;
 mod vm;
 
+use std::fs::FileType;
 use std::path::{Path, PathBuf};
 
 use crate::hir::item::{Function, Item, ItemName, Scope};
@@ -91,9 +92,18 @@ fn gather_tests(dir_name: &str, files: &mut Vec<PathBuf>) {
                 if file_name.starts_with('_') {
                     continue;
                 }
-                if file_name.ends_with(".rs") {
-                    let file = dir_path.join(file_name);
-                    files.push(file);
+                if let Ok(file_ty) = entry.file_type() {
+                    if file_ty.is_dir() {
+                        let sub_dir = dir_path.join(file_name);
+                        if let Some(sub_dir) = sub_dir.to_str() {
+                            gather_tests(sub_dir,files);
+                        }
+                    } else if file_ty.is_file() {
+                        if file_name.ends_with(".rs") {
+                            let file = dir_path.join(file_name);
+                            files.push(file);
+                        }
+                    }
                 }
             }
         }

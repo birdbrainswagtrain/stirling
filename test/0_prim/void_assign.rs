@@ -1,5 +1,5 @@
 
-mod _skitter_builtin;
+mod _builtin;
 
 fn main() {
     let mut x = 10;
@@ -7,5 +7,5 @@ fn main() {
     let r2 = if true { x += 10 } else { () };
     let r3 = if true { x <<= 1 } else { () };
 
-    _skitter_builtin::print_i64(x);
+    _builtin::print_int(x);
 }
