@@ -1,7 +1,7 @@
 use crate::hir::item::Function;
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 #[repr(u16)]
 pub enum Instr {
     I8_Const(u32, i8),

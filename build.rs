@@ -8,9 +8,9 @@ fn write_unary(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{instr}(out, src) => {{
-        let x: {ty} = read_stack(stack, src);
+        let x: {ty} = read_stack(stack, *src);
         let res = {op};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"
     ));
 }
@@ -19,10 +19,10 @@ fn write_binary(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{instr}(out, lhs, rhs) => {{
-        let a: {ty} = read_stack(stack, lhs);
-        let b: {ty} = read_stack(stack, rhs);
+        let a: {ty} = read_stack(stack, *lhs);
+        let b: {ty} = read_stack(stack, *rhs);
         let res = {op};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"
     ));
 }
@@ -31,10 +31,10 @@ fn write_shift(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{instr}(out, lhs, rhs) => {{
-        let a: {ty} = read_stack(stack, lhs);
-        let b: u8 = read_stack(stack, rhs);
+        let a: {ty} = read_stack(stack, *lhs);
+        let b: u8 = read_stack(stack, *rhs);
         let res = {op};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"
     ));
 }
@@ -43,8 +43,9 @@ fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{instr}(out, x) => {{
+        let x = *x;
         let res: {ty} = {op};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"
     ));
 }
@@ -55,9 +56,9 @@ fn write_widen(dst_bits: i32, src_bits: i32, signed: bool, source: &mut String) 
     source.push_str(&format!(
         "
     Instr::I{dst_bits}_{sign_char}_Widen_{src_bits}(out, src) => {{
-        let x: {ty_char}{src_bits} = read_stack(stack, src);
+        let x: {ty_char}{src_bits} = read_stack(stack, *src);
         let res = x as {ty_char}{dst_bits};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"));
 }
 
@@ -65,9 +66,9 @@ fn write_cast(name: &str, dst_ty: &str, src_ty: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{name}(out, src) => {{
-        let x: {src_ty} = read_stack(stack, src);
+        let x: {src_ty} = read_stack(stack, *src);
         let res = x as {dst_ty};
-        write_stack(stack, out, res);
+        write_stack(stack, *out, res);
     }}"));
 }
 
@@ -214,40 +215,40 @@ fn write_exec_match() {
     source.push_str(
         r#"
     Instr::JumpF(offset, cond) => {
-        let x: bool = read_stack(stack, cond);
+        let x: bool = read_stack(stack, *cond);
         if !x {
-            pc = (pc as isize + offset as isize) as usize;
+            pc = (pc as isize + *offset as isize) as usize;
             continue;
         }
     }
     Instr::Jump(offset) => {
-        pc = (pc as isize + offset as isize) as usize;
+        pc = (pc as isize + *offset as isize) as usize;
         continue;
     }
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::Return => break,
     Instr::Call(base,func) => {
-        crate::vm::exec(func,stack.offset(base as isize));
+        crate::vm::exec(func,stack.offset(*base as isize));
         //panic!("call please");
     }
     Instr::BuiltIn_print_int(arg) => {
-        let arg: i128 = read_stack(stack, arg);
+        let arg: i128 = read_stack(stack, *arg);
         crate::builtin::print_int(arg);
     }
     Instr::BuiltIn_print_uint(arg) => {
-        let arg: u128 = read_stack(stack, arg);
+        let arg: u128 = read_stack(stack, *arg);
         crate::builtin::print_uint(arg);
     }
     Instr::BuiltIn_print_float(arg) => {
-        let arg: f64 = read_stack(stack, arg);
+        let arg: f64 = read_stack(stack, *arg);
         crate::builtin::print_float(arg);
     }
     Instr::BuiltIn_print_bool(arg) => {
-        let arg: bool = read_stack(stack, arg);
+        let arg: bool = read_stack(stack, *arg);
         crate::builtin::print_bool(arg);
     }
     Instr::BuiltIn_print_char(arg) => {
-        let arg: char = read_stack(stack, arg);
+        let arg: char = read_stack(stack, *arg);
         crate::builtin::print_char(arg);
     }
     _ => panic!("NYI {:?}",instr)

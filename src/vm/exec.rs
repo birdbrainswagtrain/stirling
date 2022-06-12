@@ -12,7 +12,7 @@ pub unsafe fn exec_rust(code: &Vec<Instr>, stack: *mut u8) {
     let mut pc = 0;
 
     loop {
-        let instr = code[pc]; //*code.get_unchecked(pc);// [pc];
+        let instr = &code[pc]; //*code.get_unchecked(pc);// [pc];
         include!("_exec_match.txt");
         pc += 1;
     }
