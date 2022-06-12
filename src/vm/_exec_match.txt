@@ -1,7 +1,6 @@
 match instr {
     Instr::I8_Const(out, x) => {
-        let x = *x;
-        let res: i8 = x;
+        let res: i8 = *x;
         write_stack(stack, *out, res);
     }
     Instr::I8_Mov(out, src) => {
@@ -134,8 +133,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::I16_Const(out, x) => {
-        let x = *x;
-        let res: i16 = x;
+        let res: i16 = *x;
         write_stack(stack, *out, res);
     }
     Instr::I16_Mov(out, src) => {
@@ -268,8 +266,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::I32_Const(out, x) => {
-        let x = *x;
-        let res: i32 = x;
+        let res: i32 = *x;
         write_stack(stack, *out, res);
     }
     Instr::I32_Mov(out, src) => {
@@ -402,8 +399,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::I64_Const(out, x) => {
-        let x = *x;
-        let res: i64 = x;
+        let res: i64 = *x;
         write_stack(stack, *out, res);
     }
     Instr::I64_Mov(out, src) => {
@@ -536,8 +532,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::I128_Const(out, x) => {
-        let x = *x;
-        let res: i128 = *x;
+        let res: i128 = **x;
         write_stack(stack, *out, res);
     }
     Instr::I128_Mov(out, src) => {
@@ -670,8 +665,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::F64_Const(out, x) => {
-        let x = *x;
-        let res: f64 = x;
+        let res: f64 = *x;
         write_stack(stack, *out, res);
     }
     Instr::F64_Neg(out, src) => {
@@ -746,8 +740,7 @@ match instr {
         write_stack(stack, *out, res);
     }
     Instr::F32_Const(out, x) => {
-        let x = *x;
-        let res: f32 = x;
+        let res: f32 = *x;
         write_stack(stack, *out, res);
     }
     Instr::F32_Neg(out, src) => {

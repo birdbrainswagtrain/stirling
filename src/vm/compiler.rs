@@ -502,7 +502,7 @@ impl<'a> BCompiler<'a> {
                         4 => self.push_code(Instr::I32_Const(dest_slot, *n as i32)),
                         8 => self.push_code(Instr::I64_Const(dest_slot, *n as i64)),
                         16 => {
-                            let n_ref= Box::leak(Box::new(*n as i128));
+                            let n_ref= Box::new(*n as i128);
                             self.push_code(Instr::I128_Const(dest_slot, n_ref));
                         }
                         _ => panic!("todo more literal ints")

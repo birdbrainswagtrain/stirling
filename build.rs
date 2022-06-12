@@ -43,7 +43,6 @@ fn write_immediate(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
     Instr::{instr}(out, x) => {{
-        let x = *x;
         let res: {ty} = {op};
         write_stack(stack, *out, res);
     }}"
@@ -76,10 +75,10 @@ fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     let big = signed.to_uppercase();
 
     if signed == "i128" {
-        // I128 constants contain a pointer
-        write_immediate(&format!("{}_Const",big), signed, "*x", source);
+        // I128 constants are boxed
+        write_immediate(&format!("{}_Const",big), signed, "**x", source);
     } else {
-        write_immediate(&format!("{}_Const",big), signed, "x", source);
+        write_immediate(&format!("{}_Const",big), signed, "*x", source);
     }
     write_unary(&format!("{}_Mov",big), signed, "x", source);
     write_unary(&format!("{}_Neg",big), signed, "x.wrapping_neg()", source);
@@ -107,7 +106,7 @@ fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
 
 fn write_float_ops(ty: &str, source: &mut String) {
     let big = ty.to_uppercase();
-    write_immediate(&format!("{}_Const",big), ty, "x", source);
+    write_immediate(&format!("{}_Const",big), ty, "*x", source);
     write_unary(&format!("{}_Neg",big), ty, "-x", source);
     write_binary(&format!("{}_Add",big), ty, "a + b", source);
     write_binary(&format!("{}_Sub",big), ty, "a - b", source);

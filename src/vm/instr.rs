@@ -100,7 +100,7 @@ pub enum Instr {
     I64_U_Rem(u32, u32, u32),
     I64_U_ShiftR(u32, u32, u32),
 
-    I128_Const(u32, &'static i128),
+    I128_Const(u32, Box<i128>),
     I128_Mov(u32, u32),
     I128_Neg(u32, u32),
     I128_Not(u32, u32),
