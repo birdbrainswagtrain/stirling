@@ -502,18 +502,8 @@ impl<'a> BCompiler<'a> {
                         4 => self.push_code(Instr::I32_Const(dest_slot, *n as i32)),
                         8 => self.push_code(Instr::I64_Const(dest_slot, *n as i64)),
                         16 => {
-                            let low = *n as i64;
-                            let high = ((*n as i128) >> 64) as i64;
-                            self.push_code(Instr::I128_Const(dest_slot, low));
-                            if low >= 0 {
-                                if high != 0 {
-                                    self.push_code(Instr::I128_ConstHigh(dest_slot, high));
-                                }
-                            } else {
-                                if high != -1 {
-                                    self.push_code(Instr::I128_ConstHigh(dest_slot, high));
-                                }
-                            }
+                            let n_ref= Box::leak(Box::new(*n as i128));
+                            self.push_code(Instr::I128_Const(dest_slot, n_ref));
                         }
                         _ => panic!("todo more literal ints")
                     };

@@ -75,19 +75,8 @@ fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     let big = signed.to_uppercase();
 
     if signed == "i128" {
-        // I128 constants use up to two instructions, each containing an i64
-        source.push_str(&format!(
-            "
-        Instr::I128_Const(out, x) => {{
-            let res: i128 = x as i128;
-            write_stack(stack, out, res);
-        }}
-        Instr::I128_ConstHigh(out, x) => {{
-            let res: i64 = x;
-            write_stack(stack, out + 8, res);
-        }}
-        "
-        ));
+        // I128 constants contain a pointer
+        write_immediate(&format!("{}_Const",big), signed, "*x", source);
     } else {
         write_immediate(&format!("{}_Const",big), signed, "x", source);
     }

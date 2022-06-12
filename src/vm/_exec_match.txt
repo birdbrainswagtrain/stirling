@@ -531,15 +531,10 @@ match instr {
         let res = a.wrapping_shr(b as _);
         write_stack(stack, out, res);
     }
-        Instr::I128_Const(out, x) => {
-            let res: i128 = x as i128;
-            write_stack(stack, out, res);
-        }
-        Instr::I128_ConstHigh(out, x) => {
-            let res: i64 = x;
-            write_stack(stack, out + 8, res);
-        }
-        
+    Instr::I128_Const(out, x) => {
+        let res: i128 = *x;
+        write_stack(stack, out, res);
+    }
     Instr::I128_Mov(out, src) => {
         let x: i128 = read_stack(stack, src);
         let res = x;
