@@ -305,6 +305,16 @@ impl FuncHIR {
                     }
                 }
             }
+            Expr::Return(arg) => {
+                if let Some(arg) = arg {
+                    self.check_match_2(arg, self.root_expr as u32)
+                } else {
+                    CheckResult {
+                        mutated: false,
+                        resolved: true,
+                    }
+                }
+            }
             Expr::Continue(_target_loop) => CheckResult {
                 mutated: false,
                 resolved: true,
