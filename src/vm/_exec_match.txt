@@ -3,11 +3,6 @@ match instr {
         let res: i8 = *x;
         write_stack(stack, *out, res);
     }
-    Instr::I8_Mov(out, src) => {
-        let x: i8 = read_stack(stack, *src);
-        let res = x;
-        write_stack(stack, *out, res);
-    }
     Instr::I8_Neg(out, src) => {
         let x: i8 = read_stack(stack, *src);
         let res = x.wrapping_neg();
@@ -134,11 +129,6 @@ match instr {
     }
     Instr::I16_Const(out, x) => {
         let res: i16 = *x;
-        write_stack(stack, *out, res);
-    }
-    Instr::I16_Mov(out, src) => {
-        let x: i16 = read_stack(stack, *src);
-        let res = x;
         write_stack(stack, *out, res);
     }
     Instr::I16_Neg(out, src) => {
@@ -269,11 +259,6 @@ match instr {
         let res: i32 = *x;
         write_stack(stack, *out, res);
     }
-    Instr::I32_Mov(out, src) => {
-        let x: i32 = read_stack(stack, *src);
-        let res = x;
-        write_stack(stack, *out, res);
-    }
     Instr::I32_Neg(out, src) => {
         let x: i32 = read_stack(stack, *src);
         let res = x.wrapping_neg();
@@ -402,11 +387,6 @@ match instr {
         let res: i64 = *x;
         write_stack(stack, *out, res);
     }
-    Instr::I64_Mov(out, src) => {
-        let x: i64 = read_stack(stack, *src);
-        let res = x;
-        write_stack(stack, *out, res);
-    }
     Instr::I64_Neg(out, src) => {
         let x: i64 = read_stack(stack, *src);
         let res = x.wrapping_neg();
@@ -533,11 +513,6 @@ match instr {
     }
     Instr::I128_Const(out, x) => {
         let res: i128 = **x;
-        write_stack(stack, *out, res);
-    }
-    Instr::I128_Mov(out, src) => {
-        let x: i128 = read_stack(stack, *src);
-        let res = x;
         write_stack(stack, *out, res);
     }
     Instr::I128_Neg(out, src) => {
@@ -1129,6 +1104,76 @@ match instr {
         let res = x as u128;
         write_stack(stack, *out, res);
     }
+    Instr::MovSS1(out, src) => {
+        let x: u8 = read_stack(stack, *src);
+        let res = x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSS2(out, src) => {
+        let x: u16 = read_stack(stack, *src);
+        let res = x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSS4(out, src) => {
+        let x: u32 = read_stack(stack, *src);
+        let res = x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSS8(out, src) => {
+        let x: u64 = read_stack(stack, *src);
+        let res = x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSS16(out, src) => {
+        let x: u128 = read_stack(stack, *src);
+        let res = x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovPS1(out, src) => {
+        let x: u8 = read_stack(stack, *src);
+        let res = x;
+
+        let ptr: *mut u8 = read_stack(stack, *out);
+        //panic!("wew {:?} {:?}",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }
+    Instr::MovPS2(out, src) => {
+        let x: u16 = read_stack(stack, *src);
+        let res = x;
+
+        let ptr: *mut u16 = read_stack(stack, *out);
+        //panic!("wew {:?} {:?}",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }
+    Instr::MovPS4(out, src) => {
+        let x: u32 = read_stack(stack, *src);
+        let res = x;
+
+        let ptr: *mut u32 = read_stack(stack, *out);
+        //panic!("wew {:?} {:?}",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }
+    Instr::MovPS8(out, src) => {
+        let x: u64 = read_stack(stack, *src);
+        let res = x;
+
+        let ptr: *mut u64 = read_stack(stack, *out);
+        //panic!("wew {:?} {:?}",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }
+    Instr::MovPS16(out, src) => {
+        let x: u128 = read_stack(stack, *src);
+        let res = x;
+
+        let ptr: *mut u128 = read_stack(stack, *out);
+        //panic!("wew {:?} {:?}",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }
     Instr::JumpF(offset, cond) => {
         let x: bool = read_stack(stack, *cond);
         if !x {
@@ -1141,6 +1186,10 @@ match instr {
         continue;
     }
     Instr::Bad => panic!("encountered bad instruction"),
+    Instr::SlotPtr(out,arg) => {
+        let res = stack.add(*arg as usize) as usize;
+        write_stack(stack, *out, res);
+    }
     Instr::Return => break,
     Instr::Call(base,func) => {
         crate::vm::exec(func,stack.offset(*base as isize));

@@ -5,7 +5,6 @@ mod jit;
 mod profiler;
 mod vm;
 
-use std::fs::FileType;
 use std::path::{Path, PathBuf};
 
 use crate::hir::item::{Function, Item, ItemName, Scope};
@@ -18,7 +17,7 @@ use vm::exec_main;
 
 const PTR_WIDTH: usize = 8;
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
 const USE_VM_NATIVE: bool = false;

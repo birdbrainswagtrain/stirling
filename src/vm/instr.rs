@@ -5,7 +5,6 @@ use crate::hir::item::Function;
 #[repr(u16)]
 pub enum Instr {
     I8_Const(u32, i8),
-    I8_Mov(u32, u32),
     I8_Neg(u32, u32),
     I8_Not(u32, u32),
     I8_Eq(u32, u32, u32),
@@ -29,7 +28,6 @@ pub enum Instr {
     I8_U_ShiftR(u32, u32, u32),
 
     I16_Const(u32, i16),
-    I16_Mov(u32, u32),
     I16_Neg(u32, u32),
     I16_Not(u32, u32),
     I16_Eq(u32, u32, u32),
@@ -53,7 +51,6 @@ pub enum Instr {
     I16_U_ShiftR(u32, u32, u32),
 
     I32_Const(u32, i32),
-    I32_Mov(u32, u32),
     I32_Neg(u32, u32),
     I32_Not(u32, u32),
     I32_Eq(u32, u32, u32),
@@ -77,7 +74,6 @@ pub enum Instr {
     I32_U_ShiftR(u32, u32, u32),
 
     I64_Const(u32, i64),
-    I64_Mov(u32, u32),
     I64_Neg(u32, u32),
     I64_Not(u32, u32),
     I64_Eq(u32, u32, u32),
@@ -101,7 +97,6 @@ pub enum Instr {
     I64_U_ShiftR(u32, u32, u32),
 
     I128_Const(u32, Box<i128>),
-    I128_Mov(u32, u32),
     I128_Neg(u32, u32),
     I128_Not(u32, u32),
     I128_Eq(u32, u32, u32),
@@ -222,11 +217,24 @@ pub enum Instr {
     F64_Into_I64_U(u32, u32),
     F64_Into_I128_U(u32, u32),
 
+    MovSS1(u32,u32),
+    MovSS2(u32,u32),
+    MovSS4(u32,u32),
+    MovSS8(u32,u32),
+    MovSS16(u32,u32),
+
+    MovPS1(u32,u32),
+    MovPS2(u32,u32),
+    MovPS4(u32,u32),
+    MovPS8(u32,u32),
+    MovPS16(u32,u32),
+
     Jump(i32),
     JumpF(i32, u32),
 
     Call(u32, &'static Function),
 
+    SlotPtr(u32,u32),
     Return,
     Bad,
 

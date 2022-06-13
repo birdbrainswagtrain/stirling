@@ -15,6 +15,21 @@ fn write_unary(instr: &str, ty: &str, op: &str, source: &mut String) {
     ));
 }
 
+fn write_pointer(instr: &str, ty: &str, op: &str, source: &mut String) {
+    source.push_str(&format!(
+        "
+    Instr::{instr}(out, src) => {{
+        let x: {ty} = read_stack(stack, *src);
+        let res = {op};
+
+        let ptr: *mut {ty} = read_stack(stack, *out);
+        //panic!(\"wew {{:?}} {{:?}}\",stack,ptr);
+        *ptr = res;
+        //write_stack(stack, *out, res);
+    }}"
+    ));
+}
+
 fn write_binary(instr: &str, ty: &str, op: &str, source: &mut String) {
     source.push_str(&format!(
         "
@@ -80,7 +95,6 @@ fn write_int_ops(signed: &str, unsigned: &str, source: &mut String) {
     } else {
         write_immediate(&format!("{}_Const",big), signed, "*x", source);
     }
-    write_unary(&format!("{}_Mov",big), signed, "x", source);
     write_unary(&format!("{}_Neg",big), signed, "x.wrapping_neg()", source);
     write_unary(&format!("{}_Not",big), signed, "!x", source);
     write_binary(&format!("{}_Eq",big), signed, "a == b", source);
@@ -211,6 +225,18 @@ fn write_exec_match() {
     write_widen(128,8,true,&mut source);
     write_widen(128,8,false,&mut source);
 
+    write_unary("MovSS1", "u8", "x", &mut source);
+    write_unary("MovSS2", "u16", "x", &mut source);
+    write_unary("MovSS4", "u32", "x", &mut source);
+    write_unary("MovSS8", "u64", "x", &mut source);
+    write_unary("MovSS16", "u128", "x", &mut source);
+
+    write_pointer("MovPS1", "u8", "x", &mut source);
+    write_pointer("MovPS2", "u16", "x", &mut source);
+    write_pointer("MovPS4", "u32", "x", &mut source);
+    write_pointer("MovPS8", "u64", "x", &mut source);
+    write_pointer("MovPS16", "u128", "x", &mut source);
+
     source.push_str(
         r#"
     Instr::JumpF(offset, cond) => {
@@ -225,6 +251,10 @@ fn write_exec_match() {
         continue;
     }
     Instr::Bad => panic!("encountered bad instruction"),
+    Instr::SlotPtr(out,arg) => {
+        let res = stack.add(*arg as usize) as usize;
+        write_stack(stack, *out, res);
+    }
     Instr::Return => break,
     Instr::Call(base,func) => {
         crate::vm::exec(func,stack.offset(*base as isize));

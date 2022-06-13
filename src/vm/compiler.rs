@@ -59,14 +59,9 @@ pub fn compile(func: &Function) -> Vec<Instr> {
 
     profile("lower HIR -> BC", || {
         let mut frame = FrameAllocator::default();
-        let return_slot = frame.alloc(sig.output);
+        let return_slot = frame.alloc(Type::Int(IntType::USize)).unwrap();
 
-        match return_slot {
-            Some(offset) => {
-                assert_eq!(offset, 0);
-            }
-            None => (),
-        }
+        assert_eq!(return_slot,0);
 
         let mut var_map = vec![None; input_fn.vars.len()];
 
@@ -84,8 +79,12 @@ pub fn compile(func: &Function) -> Vec<Instr> {
             loop_results: Vec::new()
         };
 
-        compiler.lower_expr(input_fn.root_expr as u32, return_slot);
-        compiler.push_code(Instr::Return);
+        let res = compiler.lower_expr(input_fn.root_expr as u32, None);
+
+        // add return
+        println!(">>>>>");
+        compiler.insert_return(res);
+
         if crate::VERBOSE {
             compiler.dump();
         }
@@ -454,7 +453,7 @@ impl<'a> BCompiler<'a> {
                 if mandatory_dest_slot.is_none() {
                     src
                 } else {
-                    self.insert_move(mandatory_dest_slot.unwrap(), src.unwrap(), *ty);
+                    self.insert_move_ss(mandatory_dest_slot.unwrap(), src.unwrap(), *ty);
                     mandatory_dest_slot
                 }
             }
@@ -793,30 +792,41 @@ impl<'a> BCompiler<'a> {
             }
             Expr::Call(func, args) => {
 
-                let saved_frame_pre = self.frame;
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let saved_frame = self.frame;
+
                 let call_base = self.frame.align_for_call();
                 let sig = func.sig();
-                let res_slot = self.frame.alloc(sig.output);
+                let ret_ptr_slot = self.frame.alloc(Type::Int(IntType::USize)).unwrap();
+                assert_eq!(call_base,ret_ptr_slot);
 
-                let saved_frame_res = self.frame;
+                if let Some(dest_slot) = dest_slot {
+                    // the return pointer slot should point to the result slot
+                    self.push_code(Instr::SlotPtr(ret_ptr_slot,dest_slot));
+                } else {
+                    // null the return pointer for safety
+                    self.push_code(Instr::I64_Const(ret_ptr_slot, 0));
+                }
+
                 for (ty,ex) in sig.inputs.iter().zip(args.iter()) {
                     let slot = self.frame.alloc(*ty);
                     self.lower_expr(*ex, slot);
                 }
-                self.frame = saved_frame_res;
 
                 self.push_code(Instr::Call(call_base, func));
 
-                if let Some(mandatory_dest_slot) = mandatory_dest_slot {
-                    if let Some(res_slot) = res_slot {
-                        self.insert_move(mandatory_dest_slot, res_slot, *ty);
-                    }
-
-                    self.frame = saved_frame_pre;
-                    Some(mandatory_dest_slot)
+                self.frame = saved_frame;
+                dest_slot
+            }
+            Expr::Return(arg) => {
+                let slot = if let Some(arg) = arg {
+                    self.lower_expr(*arg, None)
                 } else {
-                    res_slot
-                }
+                    None
+                };
+                self.insert_return(slot);
+
+                None
             }
             _ => panic!("vm compile {:?}", expr),
         };
@@ -848,24 +858,52 @@ impl<'a> BCompiler<'a> {
         dest_slot
     }
 
-    fn insert_move(&mut self, dest: u32, src: u32, ty: Type) {
+    fn insert_move_ss(&mut self, dest: u32, src: u32, ty: Type) {
         // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
         let align = ty.byte_align();
 
         if size == 1 && align == 1 {
-            self.push_code(Instr::I8_Mov(dest, src));
+            self.push_code(Instr::MovSS1(dest, src));
         } else if size == 2 && align == 2 {
-            self.push_code(Instr::I16_Mov(dest, src));
+            self.push_code(Instr::MovSS2(dest, src));
         } else if size == 4 && align == 4 {
-            self.push_code(Instr::I32_Mov(dest, src));
+            self.push_code(Instr::MovSS4(dest, src));
         } else if size == 8 && align == 8 {
-            self.push_code(Instr::I64_Mov(dest, src));
+            self.push_code(Instr::MovSS8(dest, src));
         } else if size == 16 && align == 16 {
-            self.push_code(Instr::I128_Mov(dest, src));
+            self.push_code(Instr::MovSS16(dest, src));
         } else {
             panic!("no move");
         }
+    }
+
+    fn insert_move_ps(&mut self, dest: u32, src: u32, ty: Type) {
+        // todo ignore type alignment and use src/dst alignment
+        let size = ty.byte_size();
+        let align = ty.byte_align();
+
+        if size == 1 && align == 1 {
+            self.push_code(Instr::MovPS1(dest, src));
+        } else if size == 2 && align == 2 {
+            self.push_code(Instr::MovPS2(dest, src));
+        } else if size == 4 && align == 4 {
+            self.push_code(Instr::MovPS4(dest, src));
+        } else if size == 8 && align == 8 {
+            self.push_code(Instr::MovPS8(dest, src));
+        } else if size == 16 && align == 16 {
+            self.push_code(Instr::MovPS16(dest, src));
+        } else {
+            panic!("no move");
+        }
+    }
+
+    fn insert_return(&mut self, res: Option<u32>) {
+        if let Some(res) = res {
+            let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
+            self.insert_move_ps(0, res, ty);
+        }
+        self.push_code(Instr::Return);
     }
 
     fn dump(&self) {

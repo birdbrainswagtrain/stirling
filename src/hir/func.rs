@@ -390,6 +390,14 @@ impl Block {
                     _ => panic!("attempt to call {:?}", func),
                 }
             }
+            syn::Expr::Return(syn::ExprReturn{expr,..}) => {
+                if let Some(expr) = expr {
+                    let id_arg = self.add_expr(code, expr);
+                    code.push_expr(Expr::Return(Some(id_arg)),Type::Never)
+                } else {
+                    code.push_expr(Expr::Return(None),Type::Never)
+                }
+            }
             _ => panic!("todo handle expr => {:?}", syn_expr),
         }
     }
@@ -426,6 +434,7 @@ pub enum Expr {
     While(u32, Box<Block>),
     Loop(Box<Block>),
     Call(&'static Function, Vec<u32>),
+    Return(Option<u32>),
     CallBuiltin(String, Vec<u32>),
     Break(u32, Option<u32>),
     Continue(u32),
