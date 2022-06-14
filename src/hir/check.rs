@@ -1,6 +1,6 @@
 use crate::builtin::BUILTINS;
 
-use super::func::{Expr, FuncHIR};
+use super::func::{Expr, FuncHIR, Block};
 use super::types::{ComplexType, FloatType, IntType, Signature, Type};
 
 #[derive(Clone, Copy)]
@@ -148,8 +148,17 @@ impl FuncHIR {
                 }
             }
             Expr::Assign(dst, src) => {
-                assert_eq!(info.ty, Type::Void);
-                self.check_match_2(dst, src)
+                let res = self.check_assign(dst, src);
+                // our type is either void or never, depending on the source type
+                if res.resolved {
+                    let ty = self.exprs[src as usize].ty;
+                    if ty == Type::Never {
+                        self.update_expr_type(index, Type::Never);
+                    } else {
+                        self.update_expr_type(index, Type::Void);
+                    }
+                }
+                res
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => self.check_bin_op(index, lhs, op, rhs),
             Expr::BinOp(lhs, op, rhs) => {
@@ -205,12 +214,15 @@ impl FuncHIR {
 
             Expr::Block(ref block) => {
                 if let Some(result_id) = block.result {
-                    self.check_match_2(index, result_id)
+                    self.check_assign(index, result_id)
                 } else {
-                    let mutated = self.update_expr_type(index, Type::Void);
-                    CheckResult {
-                        mutated,
-                        resolved: true,
+                    if let Some(stmts_ty) = self.get_block_stmts_ty(block) {
+                        self.check_assign_ty(index, stmts_ty)
+                    } else {
+                        CheckResult {
+                            mutated: false,
+                            resolved: false
+                        }
                     }
                 }
             }
@@ -305,9 +317,18 @@ impl FuncHIR {
                     }
                 }
             }
+            Expr::Continue(_target_loop) => CheckResult {
+                mutated: false,
+                resolved: true,
+            },
             Expr::Return(arg) => {
                 if let Some(arg) = arg {
-                    self.check_match_2(arg, self.root_expr as u32)
+                    // TODO lambdas might not have a known return type :(
+                    let mutated = self.update_expr_type(arg, self.return_ty);
+                    CheckResult {
+                        mutated,
+                        resolved: true,
+                    }
                 } else {
                     CheckResult {
                         mutated: false,
@@ -315,10 +336,6 @@ impl FuncHIR {
                     }
                 }
             }
-            Expr::Continue(_target_loop) => CheckResult {
-                mutated: false,
-                resolved: true,
-            },
             Expr::CallBuiltin(ref name, ref args) => {
                 let entry = BUILTINS.get(name.as_str());
                 if entry.is_none() {
@@ -358,6 +375,25 @@ impl FuncHIR {
         CheckResult {
             mutated,
             resolved: true,
+        }
+    }
+
+    fn get_block_stmts_ty(&self, block: &Block) -> Option<Type> {
+
+        let mut resolved = true;
+        for stmt_id in &block.stmts {
+            let info = &self.exprs[*stmt_id as usize];
+            if info.is_resolved && info.ty == Type::Never {
+                return Some(Type::Never);
+            } else if !info.is_resolved {
+                resolved = false;
+            }
+        }
+
+        if resolved {
+            Some(Type::Void)
+        } else {
+            None
         }
     }
 
@@ -426,6 +462,54 @@ impl FuncHIR {
         };
 
         mutated
+    }
+
+    fn check_assign(&mut self, dst: u32, src: u32) -> CheckResult {
+        let dst_ty = self.exprs[dst as usize].ty;
+        let src_ty = self.exprs[src as usize].ty;
+
+        if src_ty != dst_ty {
+            let new_ty = if src_ty == Type::Never {
+                Type::Never
+            } else {
+                dst_ty.unify(src_ty)
+            };
+            self.exprs[dst as usize].ty = new_ty;
+            self.exprs[src as usize].ty = new_ty;
+            
+            CheckResult{
+                mutated: true,
+                resolved: !new_ty.is_unknown()
+            }
+        } else {
+            CheckResult{
+                mutated: false,
+                resolved: !src_ty.is_unknown()
+            }
+        }
+    }
+
+    fn check_assign_ty(&mut self, dst: u32, src_ty: Type) -> CheckResult {
+        let dst_ty = self.exprs[dst as usize].ty;
+
+        if src_ty != dst_ty {
+            let new_ty = if src_ty == Type::Never {
+                Type::Never
+            } else {
+                dst_ty.unify(src_ty)
+            };
+            self.exprs[dst as usize].ty = new_ty;
+            
+            CheckResult{
+                mutated: true,
+                resolved: !new_ty.is_unknown()
+            }
+        } else {
+            CheckResult{
+                mutated: false,
+                resolved: !src_ty.is_unknown()
+            }
+        }
     }
 
     fn check_match_2(&mut self, arg1: u32, arg2: u32) -> CheckResult {

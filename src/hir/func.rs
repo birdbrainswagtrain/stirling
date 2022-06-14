@@ -9,6 +9,7 @@ pub struct FuncHIR {
     pub root_expr: usize,
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
+    pub return_ty: Type,
     break_index: Vec<(u32, Option<String>)>,
 }
 
@@ -40,13 +41,14 @@ impl FuncHIR {
             exprs: vec![],
             vars: vec![],
             break_index: vec![],
+            return_ty: ty_sig.output
         };
         profile("lower AST -> HIR", || {
             let mut body = Block::new(Some(parent_scope));
             body.add_args(&mut code, &syn_fn.sig, ty_sig);
             body.add_from_syn(&mut code, &syn_fn.block);
 
-            let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
+            let root = code.push_expr(Expr::Block(Box::new(body)), Type::Unknown);
             code.root_expr = root as usize;
         });
 
@@ -205,7 +207,7 @@ impl Block {
 
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
-                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Void);
+                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Unknown);
                         self.stmts.push(assign_id);
                     }
                 }
@@ -255,7 +257,7 @@ impl Block {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
 
-                code.push_expr(Expr::Assign(id_l, id_r), Type::Void)
+                code.push_expr(Expr::Assign(id_l, id_r), Type::Unknown)
             }
             syn::Expr::Path(syn::ExprPath { path, .. }) => {
                 let name = ItemName::Value(path_to_name(path).expect("unsupported path expr"));

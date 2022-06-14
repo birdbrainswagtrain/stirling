@@ -82,7 +82,6 @@ pub fn compile(func: &Function) -> Vec<Instr> {
         let res = compiler.lower_expr(input_fn.root_expr as u32, None);
 
         // add return
-        println!(">>>>>");
         compiler.insert_return(res);
 
         if crate::VERBOSE {
@@ -874,7 +873,7 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovSS16(dest, src));
         } else {
-            panic!("no move");
+            panic!("no move {} {}",size,align);
         }
     }
 
@@ -894,13 +893,13 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovPS16(dest, src));
         } else {
-            panic!("no move");
+            panic!("no move {} {}",size,align);
         }
     }
 
     fn insert_return(&mut self, res: Option<u32>) {
         if let Some(res) = res {
-            let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
+            let ty = self.input_fn.return_ty;
             self.insert_move_ps(0, res, ty);
         }
         self.push_code(Instr::Return);

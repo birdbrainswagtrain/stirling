@@ -333,10 +333,12 @@ impl Type {
                 (Type::Float(_), Type::FloatUnknown) => self,
                 (Type::FloatUnknown, Type::Float(_)) => other,
 
-                // we do not want to downgrade never to unknown
-                // however, upgrading it to IntUnknown or FloatUnknown is fine
-                (x, Type::Never) if x != Type::Unknown => self,
-                (Type::Never, x) if x != Type::Unknown => other,
+                // What we want to do with Never depends on the situation
+                // for most cases, never should propagate
+                // 
+                //(_, Type::Never) => Type::Never,
+                //(Type::Never, _) => Type::Never,
+                //(Type::Never, x) if x != Type::Unknown => other,
 
                 (
                     Type::Complex(ComplexType::Ref(t1, m1)),
