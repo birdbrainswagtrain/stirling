@@ -333,11 +333,9 @@ impl Type {
                 (Type::Float(_), Type::FloatUnknown) => self,
                 (Type::FloatUnknown, Type::Float(_)) => other,
 
-                // What we want to do with Never depends on the situation
-                // for most cases, never should propagate
-                // 
-                //(_, Type::Never) => Type::Never,
-                //(Type::Never, _) => Type::Never,
+                // upgrade all types from never
+                (_, Type::Never) => self,
+                (Type::Never, _) => other,
                 //(Type::Never, x) if x != Type::Unknown => other,
 
                 (

@@ -899,7 +899,7 @@ impl<'a> BCompiler<'a> {
 
     fn insert_return(&mut self, res: Option<u32>) {
         if let Some(res) = res {
-            let ty = self.input_fn.return_ty;
+            let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
             self.insert_move_ps(0, res, ty);
         }
         self.push_code(Instr::Return);

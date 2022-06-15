@@ -24,8 +24,7 @@ fn ret_nested_2() -> i32 {
 }
 
 fn ret_ret() -> i32 {
-    let x: i32 = return 50;
-    x
+    let x: f32 = ((return 50));
 }
 
 // fail to compile on rustc
