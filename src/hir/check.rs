@@ -1,4 +1,5 @@
 use crate::builtin::BUILTINS;
+use crate::is_verbose;
 
 use super::func::{Expr, FuncHIR, Block};
 use super::types::{ComplexType, FloatType, IntType, Signature, Type};
@@ -28,7 +29,7 @@ impl FuncHIR {
         let mut step = 0;
 
         loop {
-            if crate::VERBOSE {
+            if is_verbose() {
                 println!("=================== STEP {} ===================", step);
                 step += 1;
                 self.print();
@@ -38,7 +39,7 @@ impl FuncHIR {
                 break;
             }
 
-            if crate::VERBOSE {
+            if is_verbose() {
                 println!("=================== STEP {} ===================", step);
                 step += 1;
                 self.print();
@@ -52,7 +53,7 @@ impl FuncHIR {
         for i in 0..self.exprs.len() {
             self.exprs[i].ty.check_known();
         }
-        if crate::VERBOSE {
+        if is_verbose() {
             println!("=================== FINAL ===================");
             self.print();
         }
@@ -230,32 +231,18 @@ impl FuncHIR {
                         self.check_match_3(index, then_expr, else_expr)
                     } else {
                         // else side must be void or never
-                        let is_never = if let Some(never1) = self.get_block_is_never(then_block) {
-                            if let Some(never2) = self.get_expr_is_never(else_expr) {
-                                Some(never1 && never2)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
+                        let ty_then = match self.get_block_is_never(then_block) {
+                            Some(true) => Type::Never,
+                            Some(false) => Type::Void,
+                            None => Type::Unknown
                         };
 
-                        if let Some(is_never) = is_never {
-                            let ty = if is_never { Type::Never } else { Type::Void };
-                            let m1 = self.update_expr_type(else_expr, ty);
-                            let m2 = self.update_expr_type(index, ty);
-                            println!("SET VOID!");
-                            CheckResult {
-                                mutated: m1 || m2,
-                                resolved: true,
-                            }
-                        } else {
-                            CheckResult {
-                                mutated: false,
-                                resolved: false
-                            }
+                        let mutated = self.update_expr_type(index, ty_then);
+                        let mut result = self.check_match_2(index, else_expr);
+                        if mutated {
+                            result.set_mutated();
                         }
-
+                        result
                     }
                 } else {
                     // if-then
@@ -394,7 +381,8 @@ impl FuncHIR {
         match &info.expr {
             // never never
             Expr::DeclVar(_) | Expr::Var(_) |
-            Expr::LitBool(_) | Expr::LitInt(_) | Expr::LitFloat(_) => Some(false),
+            Expr::LitBool(_) | Expr::LitInt(_) | Expr::LitFloat(_) | Expr::LitVoid | Expr::LitChar(_) => Some(false),
+
 
             // always never
             Expr::Return(_) => Some(true),
@@ -402,6 +390,35 @@ impl FuncHIR {
             // sometimes never
             Expr::Block(block) => {
                 self.get_block_is_never(block)
+            }
+            Expr::If(arg, then_block, else_expr) => {
+                if self.get_expr_is_never(*arg)? {
+                    return Some(true);
+                }
+
+                // if is only never if both branches are
+                if let Some(else_expr) = else_expr {
+                    let a = self.get_block_is_never(then_block)?;
+                    let b = self.get_expr_is_never(*else_expr)?;
+
+                    Some(a && b)
+                } else {
+                    Some(false)
+                }
+            }
+            Expr::While(arg, _) => {
+                self.get_expr_is_never(*arg)
+            }
+            Expr::Loop(_) => {
+                // currently we scan the entire expression list for breaks
+                for expr in &self.exprs {
+                    if let Expr::Break(target,_) = expr.expr {
+                        if target == index {
+                            return Some(false);
+                        }
+                    }
+                }
+                Some(true)
             }
             Expr::Call(func, args) => {
                 for arg in args {
@@ -429,10 +446,15 @@ impl FuncHIR {
                 Some(sig.output == Type::Never)
             }
 
+            Expr::UnOp(arg, _) |
+            Expr::UnOpPrimitive(arg, _) |
             Expr::CastPrimitive(arg) => {
                 self.get_expr_is_never(*arg)
             }
-            Expr::Assign(a, b) => {
+
+            Expr::Assign(a, b) |
+            Expr::BinOp(a, _, b) |
+            Expr::BinOpPrimitive(a, _, b) => {
                 if self.get_expr_is_never(*a)? {
                     return Some(true);
                 }
@@ -452,7 +474,6 @@ impl FuncHIR {
             }
         }
 
-        let mut resolved = true;
         for stmt_id in &block.stmts {
             if self.get_expr_is_never(*stmt_id)? {
                 return Some(true);

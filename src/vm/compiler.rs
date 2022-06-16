@@ -4,7 +4,7 @@ use crate::{
         item::Function,
         types::{IntType, Type, FloatType},
     },
-    profiler::profile,
+    profiler::profile, is_verbose,
 };
 
 use super::instr::Instr;
@@ -84,7 +84,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
         // add return
         compiler.insert_return(res);
 
-        if crate::VERBOSE {
+        if is_verbose() {
             compiler.dump();
         }
         assert_eq!(compiler.loop_jumps.len(), 0);

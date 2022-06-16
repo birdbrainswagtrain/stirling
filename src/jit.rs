@@ -23,7 +23,7 @@ use crate::hir::item::Function;
 use crate::hir::types::{ptr_ty, CType, ComplexType, FloatType, IntType, Signature, Type};
 use crate::hir::var_storage::{get_var_storage, PlaceKind};
 use crate::profiler::profile;
-use crate::PTR_WIDTH;
+use crate::{PTR_WIDTH, is_verbose};
 
 #[derive(Clone, Copy, Debug)]
 enum CVal {
@@ -150,7 +150,7 @@ impl JIT {
 
             jit_func.compile(var_kinds);
         });
-        if crate::VERBOSE {
+        if is_verbose() {
             println!("CLIF IR ===============>\n{}", self.ctx.func);
         }
 
@@ -167,7 +167,7 @@ impl JIT {
 
         let code = self.module.get_finalized_function(fn_id);
 
-        if crate::VERBOSE {
+        if is_verbose() {
             let compiled_slice = unsafe { std::slice::from_raw_parts(code, size) };
             disassemble(compiled_slice);
         }

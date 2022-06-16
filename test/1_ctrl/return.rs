@@ -44,7 +44,7 @@ fn ret_if_1() -> i32 {
         return 60;
     } else {
         return -1;
-    }
+    };
 }
 
 fn ret_if_2() -> i32 {

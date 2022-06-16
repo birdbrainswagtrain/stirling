@@ -12,12 +12,17 @@ use crate::jit::jit_compile;
 
 use clap::Parser;
 use memoffset::offset_of;
+use once_cell::sync::OnceCell;
 use profiler::{profile, profile_log};
 use vm::exec_main;
 
 const PTR_WIDTH: usize = 8;
 
-const VERBOSE: bool = true;
+static VERBOSE: OnceCell<bool> = OnceCell::new();
+fn is_verbose() -> bool {
+    *VERBOSE.get().unwrap()
+}
+
 const LOG_JITS: bool = false;
 const USE_VM: bool = true;
 const USE_VM_NATIVE: bool = false;
@@ -33,13 +38,19 @@ struct CmdArgs{
 
     /// Dump profiler information after running.
     #[clap(long)]
-    profile: bool
+    profile: bool,
+
+    /// Dumps debug information.
+    #[clap(long,short)]
+    verbose: bool
 }
 
 fn main() {
     check_abi();
 
     let args = CmdArgs::parse();
+
+    VERBOSE.set(args.verbose).unwrap();
     
     if args.test {
         test(&args.file_name);
