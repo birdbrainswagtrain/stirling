@@ -6,13 +6,8 @@
 ### Types
 - **Integers:** Literals, arithmetic, bitwise, comparisons.
 - **Floats**: Literals, arithmetic, comparisons.
-- **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality. **TODO logical**
+- **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality.
 - **Chars**: Literals, comparisons.
-
-=================================
-**Not Ported to New Interpreter**
-
-- **References**: Scalar types can be reference and dereferenced.
 
 ### As-Casts
 - int -> int
@@ -33,6 +28,11 @@
 - `loop` loops, can yield values with `break`
 - `break` and `continue` for supported loop kinds, supports labels
 - simple function calls (no method invocation or generics)
+
+=================================
+**Not Ported to New Interpreter**
+
+- **References**: Scalar types can be reference and dereferenced.
 
 ### Not Yet Implemented
 - Patterns, match guards, if-let, etc

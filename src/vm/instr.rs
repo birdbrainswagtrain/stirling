@@ -231,6 +231,7 @@ pub enum Instr {
 
     Jump(i32),
     JumpF(i32, u32),
+    JumpT(i32, u32),
 
     Call(u32, &'static Function),
 

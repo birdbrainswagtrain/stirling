@@ -246,6 +246,13 @@ fn write_exec_match() {
             continue;
         }
     }
+    Instr::JumpT(offset, cond) => {
+        let x: bool = read_stack(stack, *cond);
+        if x {
+            pc = (pc as isize + *offset as isize) as usize;
+            continue;
+        }
+    }
     Instr::Jump(offset) => {
         pc = (pc as isize + *offset as isize) as usize;
         continue;

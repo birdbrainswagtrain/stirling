@@ -630,6 +630,12 @@ impl<'a> BCompiler<'a> {
             Expr::BinOpPrimitive(lhs, op, rhs) => {
                 let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
 
+                match op {
+                    syn::BinOp::And(_) => return self.lower_lazy_logic(true,*lhs,*rhs,mandatory_dest_slot),
+                    syn::BinOp::Or(_) => return self.lower_lazy_logic(false,*lhs,*rhs,mandatory_dest_slot),
+                    _ => ()
+                }
+
                 let (ins_ctor, flag) = instr_for_bin_op(*op, arg_ty);
 
                 let l_slot = self.lower_expr(*lhs, None).unwrap();
@@ -835,6 +841,29 @@ impl<'a> BCompiler<'a> {
         }
 
         res_slot
+    }
+
+    fn lower_lazy_logic(&mut self, is_and: bool, lhs: u32, rhs: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
+        
+        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Bool));
+        let saved_frame = self.frame;
+        
+        self.lower_expr(lhs, dest_slot);
+        self.frame = saved_frame; // reset stack
+        let pc_jump = self.code.len();
+        self.push_code(Instr::Bad);
+
+        self.lower_expr(rhs, dest_slot);
+        self.frame = saved_frame; // reset stack
+        let pc_end = self.code.len() as i32;
+
+        if is_and {
+            self.code[pc_jump] = Instr::JumpF(pc_end - pc_jump as i32, dest_slot.unwrap());
+        } else {
+            self.code[pc_jump] = Instr::JumpT(pc_end - pc_jump as i32, dest_slot.unwrap());
+        }
+
+        dest_slot
     }
 
     fn lower_block(
