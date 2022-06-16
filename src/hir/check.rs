@@ -206,8 +206,9 @@ impl FuncHIR {
                 if let Some(result_id) = block.result {
                     self.check_match_2(index, result_id)
                 } else {
-                    if let Some(stmts_ty) = self.get_block_stmts_ty(block) {
-                        let mutated = self.update_expr_type(index, stmts_ty);
+                    if let Some(is_never) = self.get_block_is_never(block) {
+                        let ty = if is_never { Type::Never } else { Type::Void };
+                        let mutated = self.update_expr_type(index, ty);
                         CheckResult {
                             mutated,
                             resolved: true
@@ -223,20 +224,38 @@ impl FuncHIR {
             Expr::If(cond, ref then_block, else_expr) => {
                 let then_expr = then_block.result;
 
-                let mutated = self.update_expr_type(cond, Type::Bool);
-
                 let mut res = if let Some(else_expr) = else_expr {
                     // if-then-else
                     if let Some(then_expr) = then_expr {
                         self.check_match_3(index, then_expr, else_expr)
                     } else {
-                        // else side must be void
-                        let m1 = self.update_expr_type(else_expr, Type::Void);
-                        let m2 = self.update_expr_type(index, Type::Void);
-                        CheckResult {
-                            mutated: m1 || m2,
-                            resolved: true,
+                        // else side must be void or never
+                        let is_never = if let Some(never1) = self.get_block_is_never(then_block) {
+                            if let Some(never2) = self.get_expr_is_never(else_expr) {
+                                Some(never1 && never2)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if let Some(is_never) = is_never {
+                            let ty = if is_never { Type::Never } else { Type::Void };
+                            let m1 = self.update_expr_type(else_expr, ty);
+                            let m2 = self.update_expr_type(index, ty);
+                            println!("SET VOID!");
+                            CheckResult {
+                                mutated: m1 || m2,
+                                resolved: true,
+                            }
+                        } else {
+                            CheckResult {
+                                mutated: false,
+                                resolved: false
+                            }
                         }
+
                     }
                 } else {
                     // if-then
@@ -254,6 +273,7 @@ impl FuncHIR {
                     }
                 };
 
+                let mutated = self.update_expr_type(cond, Type::Bool);
                 if mutated {
                     res.set_mutated();
                 }
@@ -368,23 +388,78 @@ impl FuncHIR {
         }
     }
 
-    fn get_block_stmts_ty(&self, block: &Block) -> Option<Type> {
+    fn get_expr_is_never(&self, index: u32) -> Option<bool> {
 
-        let mut resolved = true;
-        for stmt_id in &block.stmts {
-            let info = &self.exprs[*stmt_id as usize];
-            if info.is_resolved && info.ty == Type::Never {
-                return Some(Type::Never);
-            } else if !info.is_resolved {
-                resolved = false;
+        let info = &self.exprs[index as usize];
+        match &info.expr {
+            // never never
+            Expr::DeclVar(_) | Expr::Var(_) |
+            Expr::LitBool(_) | Expr::LitInt(_) | Expr::LitFloat(_) => Some(false),
+
+            // always never
+            Expr::Return(_) => Some(true),
+
+            // sometimes never
+            Expr::Block(block) => {
+                self.get_block_is_never(block)
+            }
+            Expr::Call(func, args) => {
+                for arg in args {
+                    if self.get_expr_is_never(*arg)? {
+                        return Some(true);
+                    }
+                }
+
+                let sig = func.sig();
+                Some(sig.output == Type::Never)
+            }
+            Expr::CallBuiltin(name, args) => {
+                for arg in args {
+                    if self.get_expr_is_never(*arg)? {
+                        return Some(true);
+                    }
+                }
+                
+                let entry = BUILTINS.get(name.as_str());
+                if entry.is_none() {
+                    panic!("invalid builtin: {}", name);
+                }
+
+                let sig = &entry.unwrap().1;
+                Some(sig.output == Type::Never)
+            }
+
+            Expr::CastPrimitive(arg) => {
+                self.get_expr_is_never(*arg)
+            }
+            Expr::Assign(a, b) => {
+                if self.get_expr_is_never(*a)? {
+                    return Some(true);
+                }
+
+                self.get_expr_is_never(*b)
+            }
+            
+            _ => panic!("todo never-check {:?}",info.expr)
+        }
+    }
+
+    fn get_block_is_never(&self, block: &Block) -> Option<bool> {
+
+        if let Some(res) = block.result {
+            if self.get_expr_is_never(res)? {
+                return Some(true);
             }
         }
 
-        if resolved {
-            Some(Type::Void)
-        } else {
-            None
+        let mut resolved = true;
+        for stmt_id in &block.stmts {
+            if self.get_expr_is_never(*stmt_id)? {
+                return Some(true);
+            }
         }
+
+        Some(false)
     }
 
     fn check_bin_op(&mut self, index: u32, lhs: u32, op: syn::BinOp, rhs: u32) -> CheckResult {
