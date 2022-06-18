@@ -433,16 +433,6 @@ impl<'a> BCompiler<'a> {
         self.code_frame_depth.push(self.frame.0);
     }
 
-    fn get_assign_dest(&mut self, dest: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
-        assert!(mandatory_dest_slot.is_none());
-        let dest_expr = &self.input_fn.exprs[dest as usize].expr;
-        if let Expr::Var(id) = dest_expr {
-            self.var_map[*id as usize]
-        } else {
-            panic!("non-trivial assign");
-        }
-    }
-
     fn try_get_place_slot(&mut self, expr_id: u32) -> Option<Option<u32>> {
         let expr = &self.input_fn.exprs[expr_id as usize].expr;
         if let Expr::Var(id) = expr {
@@ -537,7 +527,6 @@ impl<'a> BCompiler<'a> {
                         let arg_ty = self.input_fn.exprs[*src as usize].ty;
                         self.insert_move_ps(ptr_slot, src_slot, arg_ty);
                     }
-                    //panic!("todo non-local assign {} {:?}",ptr_slot,res_slot);
                 }
                 self.frame = saved_frame; // reset stack
                 None
@@ -720,23 +709,43 @@ impl<'a> BCompiler<'a> {
 
                 let (ins_ctor, flag) = instr_for_bin_op(*op, arg_ty);
 
-                let l_slot = self.lower_expr(*lhs, None).unwrap();
-                let r_slot = self.lower_expr(*rhs, None).unwrap();
+                if flag == BinOpFlag::Assign {
+                    assert!(mandatory_dest_slot.is_none()); // should never have a destination
+                    let r_slot = self.lower_expr(*rhs, None).unwrap();
+                    if let Some(l_slot) = self.try_get_place_slot(*lhs) {
+                        let ins = ins_ctor(l_slot.unwrap(), r_slot, l_slot.unwrap());
+                        self.push_code(ins);
+                    } else {
+                        let tmp_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(arg_ty)).unwrap();
+                        let ptr_slot = self.get_place_addr(*lhs, None);
 
-                self.frame = saved_frame; // args ready, reset stack
-                let dest_slot = if flag == BinOpFlag::Assign {
-                    self.get_assign_dest(*lhs, mandatory_dest_slot)
-                } else {
-                    mandatory_dest_slot.or_else(|| self.frame.alloc(*ty))
-                };
+                        // move value to stack
+                        self.insert_move_sp(tmp_slot, ptr_slot, arg_ty);
 
-                let ins = if flag == BinOpFlag::SwapArgs {
-                    ins_ctor(dest_slot.unwrap(), r_slot, l_slot)
+                        let ins = ins_ctor(tmp_slot, r_slot, tmp_slot);
+                        self.push_code(ins);
+                        
+                        // move value back to ptr
+                        self.insert_move_ps(ptr_slot, tmp_slot, arg_ty);
+                    }
+                    self.frame = saved_frame; // all done, reset stack
+                    None
                 } else {
-                    ins_ctor(dest_slot.unwrap(), l_slot, r_slot)
-                };
-                self.push_code(ins);
-                dest_slot
+                    let l_slot = self.lower_expr(*lhs, None).unwrap();
+                    let r_slot = self.lower_expr(*rhs, None).unwrap();
+
+                    self.frame = saved_frame; // args ready, reset stack
+
+                    let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                    
+                    let ins = if flag == BinOpFlag::SwapArgs {
+                        ins_ctor(dest_slot.unwrap(), r_slot, l_slot)
+                    } else {
+                        ins_ctor(dest_slot.unwrap(), l_slot, r_slot)
+                    };
+                    self.push_code(ins);
+                    dest_slot
+                }
             }
             Expr::UnOpPrimitive(arg, op) => {
                 let arg_slot = self.lower_expr(*arg, None).unwrap();
