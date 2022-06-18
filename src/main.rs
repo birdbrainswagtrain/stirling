@@ -1,14 +1,14 @@
 mod builtin;
 mod disassemble;
 mod hir;
-mod jit;
+//mod jit;
 mod profiler;
 mod vm;
 
 use std::path::{Path, PathBuf};
 
 use crate::hir::item::{Function, Item, ItemName, Scope};
-use crate::jit::jit_compile;
+//use crate::jit::jit_compile;
 
 use clap::Parser;
 use memoffset::offset_of;
@@ -73,10 +73,10 @@ fn main() {
         if USE_VM {
             exec_main(func);
         } else {
-            jit_compile(func);
+            /*jit_compile(func);
 
             let compiled_main = unsafe { std::mem::transmute::<_, fn()>(func.c_fn.get()) };
-            profile("exec compiled", || compiled_main());
+            profile("exec compiled", || compiled_main());*/
         }
     } else {
         panic!("can't find main");

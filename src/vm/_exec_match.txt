@@ -1129,6 +1129,31 @@ match instr {
         let res = x;
         write_stack(stack, *out, res);
     }
+    Instr::MovSP1(out, src) => {
+        let x: &u8 = read_stack(stack, *src);
+        let res = *x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSP2(out, src) => {
+        let x: &u16 = read_stack(stack, *src);
+        let res = *x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSP4(out, src) => {
+        let x: &u32 = read_stack(stack, *src);
+        let res = *x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSP8(out, src) => {
+        let x: &u64 = read_stack(stack, *src);
+        let res = *x;
+        write_stack(stack, *out, res);
+    }
+    Instr::MovSP16(out, src) => {
+        let x: &u128 = read_stack(stack, *src);
+        let res = *x;
+        write_stack(stack, *out, res);
+    }
     Instr::MovPS1(out, src) => {
         let x: u8 = read_stack(stack, *src);
         let res = x;

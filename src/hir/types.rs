@@ -8,7 +8,7 @@ use crate::PTR_WIDTH;
 use super::item::{try_path_to_name, Scope};
 
 struct TypeRegistry {
-    lookup: HashSet<&'static ComplexType>,
+    lookup: HashSet<&'static CompoundType>,
 }
 
 static TYPE_REGISTRY: Lazy<RwLock<TypeRegistry>> = Lazy::new(|| {
@@ -47,7 +47,7 @@ impl Signature {
 }
 
 #[derive(PartialEq, Eq, Hash, Debug)]
-pub enum ComplexType {
+pub enum CompoundType {
     Ref(Type, bool),
     Ptr(Type, bool),
     Tuple(Vec<Type>),
@@ -64,7 +64,7 @@ pub enum Type {
     Char,
     Void,
     Never,
-    Complex(&'static ComplexType),
+    Compound(&'static CompoundType),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -103,12 +103,12 @@ impl Type {
             syn::Type::Reference(tr) => {
                 let is_mut = tr.mutability.is_some();
                 let inner = Type::from_syn(&tr.elem, scope);
-                return Type::from_complex(ComplexType::Ref(inner, is_mut));
+                return Type::from_compound(CompoundType::Ref(inner, is_mut));
             }
             syn::Type::Ptr(tp) => {
                 let is_mut = tp.mutability.is_some();
                 let inner = Type::from_syn(&tp.elem, scope);
-                return Type::from_complex(ComplexType::Ptr(inner, is_mut));
+                return Type::from_compound(CompoundType::Ptr(inner, is_mut));
             }
             syn::Type::Never(_) => return Type::Never,
             syn::Type::Infer(_) => return Type::Unknown,
@@ -159,19 +159,19 @@ impl Type {
             Type::Unknown => panic!("unknown type in function"),
             Type::IntUnknown => *self = Type::Int(IntType::I32),
             Type::FloatUnknown => *self = Type::Float(FloatType::F64),
-            Type::Complex(ComplexType::Ref(inner, is_mut)) => {
+            Type::Compound(CompoundType::Ref(inner, is_mut)) => {
                 if inner.is_unknown() {
                     let new_inner = inner.clone().check_known();
-                    *self = Type::from_complex(ComplexType::Ref(new_inner, *is_mut));
+                    *self = Type::from_compound(CompoundType::Ref(new_inner, *is_mut));
                 }
             }
-            Type::Complex(ComplexType::Ptr(inner, is_mut)) => {
+            Type::Compound(CompoundType::Ptr(inner, is_mut)) => {
                 if inner.is_unknown() {
                     let new_inner = inner.clone().check_known();
-                    *self = Type::from_complex(ComplexType::Ptr(new_inner, *is_mut));
+                    *self = Type::from_compound(CompoundType::Ptr(new_inner, *is_mut));
                 }
             }
-            Type::Complex(ComplexType::Tuple(fields)) => {
+            Type::Compound(CompoundType::Tuple(fields)) => {
                 panic!("tuple");
             }
         }
@@ -184,9 +184,9 @@ impl Type {
                 false
             }
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
-            Type::Complex(cpx) => match cpx {
-                ComplexType::Ref(t, _) | ComplexType::Ptr(t, _) => t.is_unknown(),
-                ComplexType::Tuple(fields) => fields.iter().any(|x| x.is_unknown()),
+            Type::Compound(cpx) => match cpx {
+                CompoundType::Ref(t, _) | CompoundType::Ptr(t, _) => t.is_unknown(),
+                CompoundType::Tuple(fields) => fields.iter().any(|x| x.is_unknown()),
             },
         }
     }
@@ -214,14 +214,14 @@ impl Type {
 
     pub fn is_ptr(&self) -> bool {
         match self {
-            Type::Complex(ComplexType::Ptr(..)) => true,
+            Type::Compound(CompoundType::Ptr(..)) => true,
             _ => false,
         }
     }
 
     pub fn is_ref(&self) -> bool {
         match self {
-            Type::Complex(ComplexType::Ref(..)) => true,
+            Type::Compound(CompoundType::Ref(..)) => true,
             _ => false,
         }
     }
@@ -279,8 +279,8 @@ impl Type {
 
             Type::Int(IntType::ISize)
             | Type::Int(IntType::USize)
-            | Type::Complex(ComplexType::Ptr(..))
-            | Type::Complex(ComplexType::Ref(..)) => PTR_WIDTH,
+            | Type::Compound(CompoundType::Ptr(..))
+            | Type::Compound(CompoundType::Ref(..)) => PTR_WIDTH,
 
             _ => panic!("cannot size {:?}", self),
         }
@@ -312,8 +312,8 @@ impl Type {
             Type::Never => CType::Never,
 
             // Refs and Pointers
-            Type::Complex(ComplexType::Ref(..)) => CType::Scalar(ptr_ty()),
-            Type::Complex(ComplexType::Ptr(..)) => CType::Scalar(ptr_ty()),
+            Type::Compound(CompoundType::Ref(..)) => CType::Scalar(ptr_ty()),
+            Type::Compound(CompoundType::Ptr(..)) => CType::Scalar(ptr_ty()),
 
             _ => panic!("can't lower type {:?}", self),
         }
@@ -339,26 +339,26 @@ impl Type {
                 //(Type::Never, x) if x != Type::Unknown => other,
 
                 (
-                    Type::Complex(ComplexType::Ref(t1, m1)),
-                    Type::Complex(ComplexType::Ref(t2, m2)),
+                    Type::Compound(CompoundType::Ref(t1, m1)),
+                    Type::Compound(CompoundType::Ref(t2, m2)),
                 ) => {
                     assert_eq!(m1, m2);
                     let unified = t1.unify(*t2);
-                    Type::from_complex(ComplexType::Ref(unified, *m1))
+                    Type::from_compound(CompoundType::Ref(unified, *m1))
                 }
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
         }
     }
 
-    pub fn from_complex(t: ComplexType) -> Type {
+    pub fn from_compound(t: CompoundType) -> Type {
         let mut registry = TYPE_REGISTRY.write().unwrap();
         if let Some(res) = registry.lookup.get(&t) {
-            Type::Complex(res)
+            Type::Compound(res)
         } else {
             let res = Box::leak(Box::new(t));
             registry.lookup.insert(res);
-            Type::Complex(res)
+            Type::Compound(res)
         }
     }
 }

@@ -2,7 +2,7 @@ use crate::builtin::BUILTINS;
 use crate::is_verbose;
 
 use super::func::{Expr, FuncHIR, Block};
-use super::types::{ComplexType, FloatType, IntType, Signature, Type};
+use super::types::{CompoundType, Signature, Type};
 
 #[derive(Clone, Copy)]
 struct CheckResult {
@@ -88,7 +88,9 @@ impl FuncHIR {
             | Expr::LitBool(_)
             | Expr::LitVoid
             | Expr::DeclVar(_)
-            | Expr::CastPrimitive(_) => {
+            | Expr::CastPrimitive(_)
+            | Expr::StmtTmp(_, _)
+            => {
                 // no-ops
                 CheckResult {
                     mutated: false,
@@ -98,7 +100,7 @@ impl FuncHIR {
             Expr::Ref(arg, is_mut) => {
                 let arg_ty = self.exprs[arg as usize].ty;
 
-                let ref_ty = if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) =
+                let ref_ty = if let Type::Compound(CompoundType::Ref(ref_ty, ref_mut)) =
                     self.exprs[index as usize].ty
                 {
                     assert_eq!(is_mut, *ref_mut);
@@ -117,7 +119,7 @@ impl FuncHIR {
 
                     self.exprs[arg as usize].ty = new_ty;
                     self.exprs[index as usize].ty =
-                        Type::from_complex(ComplexType::Ref(new_ty, is_mut));
+                        Type::from_compound(CompoundType::Ref(new_ty, is_mut));
 
                     CheckResult {
                         mutated: true,
@@ -129,13 +131,13 @@ impl FuncHIR {
                 let arg_ty = self.exprs[arg as usize].ty;
                 let mut mutated = false;
                 // deref can be overridden, so we can't just assume the arg type is a ref
-                if let Type::Complex(ComplexType::Ref(ref_ty, ref_mut)) = arg_ty {
+                if let Type::Compound(CompoundType::Ref(ref_ty, ref_mut)) = arg_ty {
                     if info.ty != *ref_ty {
                         let new_ty = info.ty.unify(*ref_ty);
 
                         self.exprs[index as usize].ty = new_ty;
                         self.exprs[arg as usize].ty =
-                            Type::from_complex(ComplexType::Ref(new_ty, *ref_mut));
+                            Type::from_compound(CompoundType::Ref(new_ty, *ref_mut));
 
                         mutated = true;
                     }
@@ -448,6 +450,8 @@ impl FuncHIR {
 
             Expr::UnOp(arg, _) |
             Expr::UnOpPrimitive(arg, _) |
+            Expr::Ref(arg, _) |
+            Expr::DeRef(arg) |
             Expr::CastPrimitive(arg) => {
                 self.get_expr_is_never(*arg)
             }

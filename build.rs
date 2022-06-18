@@ -231,6 +231,12 @@ fn write_exec_match() {
     write_unary("MovSS8", "u64", "x", &mut source);
     write_unary("MovSS16", "u128", "x", &mut source);
 
+    write_unary("MovSP1", "&u8", "*x", &mut source);
+    write_unary("MovSP2", "&u16", "*x", &mut source);
+    write_unary("MovSP4", "&u32", "*x", &mut source);
+    write_unary("MovSP8", "&u64", "*x", &mut source);
+    write_unary("MovSP16", "&u128", "*x", &mut source);
+
     write_pointer("MovPS1", "u8", "x", &mut source);
     write_pointer("MovPS2", "u16", "x", &mut source);
     write_pointer("MovPS4", "u32", "x", &mut source);

@@ -75,6 +75,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
             code_frame_depth: Vec::new(),
             input_fn,
             frame,
+            temp_slots: Vec::new(),
             loop_jumps: Vec::new(),
             loop_results: Vec::new()
         };
@@ -98,6 +99,7 @@ struct BCompiler<'a> {
     code_frame_depth: Vec<u32>,
     input_fn: &'a FuncHIR,
     frame: FrameAllocator,
+    temp_slots: Vec<(u32,Option<u32>)>,
     loop_jumps: Vec<LoopJump>,
     loop_results: Vec<LoopResult>
 }
@@ -441,6 +443,48 @@ impl<'a> BCompiler<'a> {
         }
     }
 
+    fn try_get_place_slot(&mut self, expr_id: u32) -> Option<Option<u32>> {
+        let expr = &self.input_fn.exprs[expr_id as usize].expr;
+        if let Expr::Var(id) = expr {
+            let res = self.var_map[*id as usize];
+            Some(res)
+        } else if let Some(res) = self.try_get_temp_slot(expr_id) {
+            self.lower_expr(expr_id, res);
+            Some(res)
+        } else {
+            None
+        }
+    }
+
+    fn get_place_addr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> u32 {
+        if let Some(ref_slot) = self.try_get_place_slot(expr_id) {
+            // destinations for pointers should always be valid
+            let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Int(IntType::U64))).unwrap();
+            if let Some(ref_slot) = ref_slot {
+                self.push_code(Instr::SlotPtr(dest_slot, ref_slot));
+            } else {
+                self.push_code(Instr::I64_Const(dest_slot, 0));
+            }
+            dest_slot
+        } else {
+            let expr = &self.input_fn.exprs[expr_id as usize].expr;
+            if let Expr::DeRef(arg) = expr {
+                self.lower_expr(*arg, mandatory_dest_slot).unwrap()
+            } else {
+                panic!("todo ref? {:?}",expr)
+            }
+        }
+    }
+
+    fn try_get_temp_slot(&self, expr_id: u32) -> Option<Option<u32>> {
+        for (id,slot) in &self.temp_slots {
+            if *id == expr_id {
+                return Some(*slot);
+            }
+        }
+        None
+    }
+
     fn lower_expr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
 
@@ -466,12 +510,50 @@ impl<'a> BCompiler<'a> {
                     panic!("bad var decl");
                 }
             }
+            Expr::StmtTmp(arg, temp_list) => {
+                let temp_len = self.temp_slots.len();
+                for tmp_id in temp_list {
+                    let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
+                    let slot = self.frame.alloc(*tmp_ty);
+                    //println!("alloc temp {:?}",slot);
+                    self.temp_slots.push((*tmp_id,slot));
+                }
+
+                self.lower_expr(*arg, None);
+
+                self.temp_slots.resize(temp_len, (0xFFFFFFFF,None));
+                self.frame = saved_frame;
+                None
+            }
             Expr::Assign(dest, src) => {
                 assert!(mandatory_dest_slot.is_none());
-                let assign_dest_slot = self.get_assign_dest(*dest, mandatory_dest_slot);
-                self.lower_expr(*src, assign_dest_slot);
+
+                if let Some(dest_slot) = self.try_get_place_slot(*dest) {
+                    self.lower_expr(*src, dest_slot);
+                } else {
+                    let ptr_slot = self.get_place_addr(*dest, None);
+                    let src_slot = self.lower_expr(*src, None);
+                    if let Some(src_slot) = src_slot {
+                        let arg_ty = self.input_fn.exprs[*src as usize].ty;
+                        self.insert_move_ps(ptr_slot, src_slot, arg_ty);
+                    }
+                    //panic!("todo non-local assign {} {:?}",ptr_slot,res_slot);
+                }
                 self.frame = saved_frame; // reset stack
                 None
+            }
+            Expr::Ref(arg, _) => {
+                Some(self.get_place_addr(*arg,mandatory_dest_slot))
+            }
+            Expr::DeRef(arg) => {
+                // converts a pointer to a value -- this is probably going to cause problems
+                let ptr = self.lower_expr(*arg, None).unwrap();
+                self.frame = saved_frame; // arg ready, reset stack
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                if let Some(dest_slot) = dest_slot {
+                    self.insert_move_sp(dest_slot, ptr, *ty);
+                }
+                dest_slot
             }
             Expr::LitVoid => {
                 None
@@ -921,6 +1003,26 @@ impl<'a> BCompiler<'a> {
             self.push_code(Instr::MovPS8(dest, src));
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovPS16(dest, src));
+        } else {
+            panic!("no move {} {}",size,align);
+        }
+    }
+
+    fn insert_move_sp(&mut self, dest: u32, src: u32, ty: Type) {
+        // todo ignore type alignment and use src/dst alignment
+        let size = ty.byte_size();
+        let align = ty.byte_align();
+
+        if size == 1 && align == 1 {
+            self.push_code(Instr::MovSP1(dest, src));
+        } else if size == 2 && align == 2 {
+            self.push_code(Instr::MovSP2(dest, src));
+        } else if size == 4 && align == 4 {
+            self.push_code(Instr::MovSP4(dest, src));
+        } else if size == 8 && align == 8 {
+            self.push_code(Instr::MovSP8(dest, src));
+        } else if size == 16 && align == 16 {
+            self.push_code(Instr::MovSP16(dest, src));
         } else {
             panic!("no move {} {}",size,align);
         }

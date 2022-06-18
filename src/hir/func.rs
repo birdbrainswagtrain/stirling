@@ -10,6 +10,7 @@ pub struct FuncHIR {
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
     break_index: Vec<(u32, Option<String>)>,
+    nested_temporaries: Vec<u32>
 }
 
 #[derive(Debug)]
@@ -29,6 +30,14 @@ impl ExprInfo {
     }
 }
 
+fn is_expr_temporary(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(..) | Expr::DeRef(..) => false,
+        Expr::LitFloat(..) => true,
+        _ => panic!("temp??? {:?}",expr)
+    }
+}
+
 impl FuncHIR {
     pub fn from_syn(
         syn_fn: &syn::ItemFn,
@@ -39,7 +48,8 @@ impl FuncHIR {
             root_expr: 0, // invalid, todo fill
             exprs: vec![],
             vars: vec![],
-            break_index: vec![]
+            break_index: vec![],
+            nested_temporaries: vec![]
         };
         profile("lower AST -> HIR", || {
             let mut body = Block::new(Some(parent_scope));
@@ -52,6 +62,9 @@ impl FuncHIR {
 
         if code.break_index.len() > 0 {
             panic!("bad break or continue detected");
+        }
+        if code.nested_temporaries.len() > 0 {
+            panic!("bad temporary detected");
         }
 
         profile("type check", || code.check());
@@ -172,6 +185,16 @@ impl Block {
         }
     }
 
+    fn add_stmt(&mut self, id: u32, code: &mut FuncHIR) {
+        if code.nested_temporaries.len() > 0 {
+            let tmp_list = std::mem::take(&mut code.nested_temporaries);
+            let new_id = code.push_expr(Expr::StmtTmp(id,tmp_list), Type::Void);
+            self.stmts.push(new_id);
+        } else {
+            self.stmts.push(id);
+        }
+    }
+
     pub fn add_from_syn(&mut self, code: &mut FuncHIR, syn_block: &syn::Block) {
         //let mut terminate = false;
         let stmt_count = syn_block.stmts.len();
@@ -183,12 +206,12 @@ impl Block {
                     if is_final {
                         self.result = Some(expr_id);
                     } else {
-                        self.stmts.push(expr_id);
+                        self.add_stmt(expr_id, code);
                     }
                 }
                 syn::Stmt::Semi(syn_expr, _) => {
                     let expr_id = self.add_expr(code, syn_expr);
-                    self.stmts.push(expr_id);
+                    self.add_stmt(expr_id, code);
                 }
                 syn::Stmt::Local(syn_local) => {
                     let (name, ty) = pat_to_name_and_ty(&syn_local.pat, &self.scope.borrow());
@@ -240,6 +263,9 @@ impl Block {
             }) => {
                 let id_arg = self.add_expr(code, expr);
                 let is_mut = mutability.is_some();
+                if is_expr_temporary(&code.exprs[id_arg as usize].expr) {
+                    code.nested_temporaries.push(id_arg);
+                }
                 code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
             }
             syn::Expr::Field(syn::ExprField { base, member, .. }) => {
@@ -415,6 +441,7 @@ pub enum Expr {
     Block(Box<Block>),
     Var(u32),
     DeclVar(u32),
+    StmtTmp(u32,Vec<u32>),
     BinOp(u32, syn::BinOp, u32),
     BinOpPrimitive(u32, syn::BinOp, u32),
     UnOp(u32, syn::UnOp),

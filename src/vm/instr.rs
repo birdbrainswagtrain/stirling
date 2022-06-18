@@ -229,6 +229,12 @@ pub enum Instr {
     MovPS8(u32,u32),
     MovPS16(u32,u32),
 
+    MovSP1(u32,u32),
+    MovSP2(u32,u32),
+    MovSP4(u32,u32),
+    MovSP8(u32,u32),
+    MovSP16(u32,u32),
+
     Jump(i32),
     JumpF(i32, u32),
     JumpT(i32, u32),
