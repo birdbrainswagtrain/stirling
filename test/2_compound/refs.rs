@@ -8,9 +8,11 @@ fn edit_float_ref(x: &mut f64) {
     *x = *x + 10.0;
 }
 
-// todo += edit
+fn edit_float_ref_2(x: &mut f64) {
+    *x += 1.0;
+}
+
 // todo ref in assign
-// todo assign to mut ref
 
 fn main() {
     let x = 5.0;
@@ -19,6 +21,8 @@ fn main() {
     print_float_ref(y);
     print_float_ref(&25.0);
 
+    (*&mut 10) = 20;
+
     {
         let mut m = 0.0;
         edit_float_ref(&mut m);
@@ -26,5 +30,8 @@ fn main() {
         
         edit_float_ref(&mut * &mut m);
         print_float_ref(& * & m);
+
+        edit_float_ref_2(&mut m);
+        print_float_ref(&m);
     }
 }

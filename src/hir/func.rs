@@ -33,7 +33,7 @@ impl ExprInfo {
 fn is_expr_temporary(expr: &Expr) -> bool {
     match expr {
         Expr::Var(..) | Expr::DeRef(..) => false,
-        Expr::LitFloat(..) => true,
+        Expr::LitFloat(..) | Expr::LitInt(..) => true,
         _ => panic!("temp??? {:?}",expr)
     }
 }
