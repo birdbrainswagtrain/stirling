@@ -142,6 +142,16 @@ impl FuncHIR {
 
                         mutated = true;
                     }
+                } else if let Type::Compound(CompoundType::Ptr(ref_ty, ref_mut)) = arg_ty {
+                    if info.ty != *ref_ty {
+                        let new_ty = info.ty.unify(*ref_ty);
+
+                        self.exprs[index as usize].ty = new_ty;
+                        self.exprs[arg as usize].ty =
+                            Type::from_compound(CompoundType::Ptr(new_ty, *ref_mut));
+
+                        mutated = true;
+                    }
                 }
                 let r1 = !self.exprs[index as usize].ty.is_unknown();
                 let r2 = !self.exprs[arg as usize].ty.is_unknown();

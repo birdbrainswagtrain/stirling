@@ -355,7 +355,8 @@ impl Block {
                 }
             }
             // control flow-ish stuff
-            syn::Expr::Block(syn::ExprBlock { block, .. }) => {
+            syn::Expr::Block(syn::ExprBlock { block, .. }) |
+            syn::Expr::Unsafe(syn::ExprUnsafe{ block, ..}) => {
                 let hir_block = self.child_block_from_syn(code, block);
                 code.push_expr(Expr::Block(hir_block), Type::Unknown)
             }

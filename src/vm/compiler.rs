@@ -604,7 +604,10 @@ impl<'a> BCompiler<'a> {
 
                 let cast_ins_ctor: Option<fn(u32,u32)->Instr> = if src_ty == *res_ty {
                     None
-                } else if (src_ty.is_int() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int() {
+                } else if 
+                    ((src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int()) ||
+                    ((src_ty.is_int() || src_ty.is_ptr() || src_ty.is_ref()) && res_ty.is_ptr())
+                {
                     let src_width = src_ty.byte_size();
                     let res_width = res_ty.byte_size();
 
@@ -721,7 +724,7 @@ impl<'a> BCompiler<'a> {
                     assert!(mandatory_dest_slot.is_none()); // should never have a destination
                     let r_slot = self.lower_expr(*rhs, None).unwrap();
                     if let Some(l_slot) = self.try_get_place_slot(*lhs) {
-                        let ins = ins_ctor(l_slot.unwrap(), r_slot, l_slot.unwrap());
+                        let ins = ins_ctor(l_slot.unwrap(), l_slot.unwrap(), r_slot);
                         self.push_code(ins);
                     } else {
                         let tmp_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(arg_ty)).unwrap();
@@ -730,7 +733,7 @@ impl<'a> BCompiler<'a> {
                         // move value to stack
                         self.insert_move_sp(tmp_slot, ptr_slot, arg_ty);
 
-                        let ins = ins_ctor(tmp_slot, r_slot, tmp_slot);
+                        let ins = ins_ctor(tmp_slot, tmp_slot, r_slot);
                         self.push_code(ins);
                         
                         // move value back to ptr

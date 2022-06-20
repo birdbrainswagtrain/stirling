@@ -1,6 +1,6 @@
-mod _skitter_builtin;
+mod _builtin;
 
-fn main() {
+pub fn main() {
     {
         let a = 100;
         let b = &a;
@@ -11,7 +11,13 @@ fn main() {
         let pc = c as *const i32 as usize;
         let pd = d as *const i32 as usize;
 
-        _skitter_builtin::assert(1,pb == pc);
-        _skitter_builtin::assert(2,pc != pd);
+        _builtin::print_bool(pb == pc);
+        _builtin::print_bool(pc != pd);
+
+        unsafe {
+            _builtin::print_int( *(pb as *mut i32) as _ );
+            let x = &*(pb as *mut i32);
+            _builtin::print_int(*x as _);
+        }
     }
 }

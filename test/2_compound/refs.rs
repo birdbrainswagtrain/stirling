@@ -12,8 +12,6 @@ fn edit_float_ref_2(x: &mut f64) {
     *x += 1.0;
 }
 
-// todo ref in assign
-
 fn main() {
     let x = 5.0;
     let y = &x;
