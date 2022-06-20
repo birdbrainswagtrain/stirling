@@ -34,4 +34,29 @@ fn main() {
         edit_float_ref_2(&mut m);
         print_float_ref(&m);
     }
+
+    {
+        let n = &mut 0.0;
+        print_float_ref(n);
+        edit_float_ref(n);
+        print_float_ref(n);
+    }
+
+    {
+        let mut a = 15.0;
+        let o = {&mut a};
+        print_float_ref(o);
+        edit_float_ref(o);
+        print_float_ref(o);
+        print_float_ref(&a);
+    }
+
+    {
+        let mut a = 100.0;
+        let o = &mut {a};
+        print_float_ref(o);
+        edit_float_ref(o);
+        print_float_ref(o);
+        print_float_ref(&a);
+    }
 }

@@ -33,7 +33,7 @@ impl ExprInfo {
 fn is_expr_temporary(expr: &Expr) -> bool {
     match expr {
         Expr::Var(..) | Expr::DeRef(..) => false,
-        Expr::LitFloat(..) | Expr::LitInt(..) => true,
+        Expr::LitFloat(..) | Expr::LitInt(..) | Expr::Block(_) => true,
         _ => panic!("temp??? {:?}",expr)
     }
 }
@@ -229,6 +229,15 @@ impl Block {
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
                         let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Void);
+
+                        if code.nested_temporaries.len() > 0 {
+                            let tmp_list = std::mem::take(&mut code.nested_temporaries);
+                            for tmp in tmp_list {
+                                let id = code.push_expr(Expr::DeclTmp(tmp), Type::Void);
+                                self.stmts.push(id);
+                            }
+                        }
+
                         self.stmts.push(assign_id);
                     }
                 }
@@ -441,6 +450,7 @@ pub enum Expr {
     Block(Box<Block>),
     Var(u32),
     DeclVar(u32),
+    DeclTmp(u32),
     StmtTmp(u32,Vec<u32>),
     BinOp(u32, syn::BinOp, u32),
     BinOpPrimitive(u32, syn::BinOp, u32),

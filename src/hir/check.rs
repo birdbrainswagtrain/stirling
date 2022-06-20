@@ -88,8 +88,9 @@ impl FuncHIR {
             | Expr::LitBool(_)
             | Expr::LitVoid
             | Expr::DeclVar(_)
-            | Expr::CastPrimitive(_)
+            | Expr::DeclTmp(_)
             | Expr::StmtTmp(_, _)
+            | Expr::CastPrimitive(_)
             => {
                 // no-ops
                 CheckResult {
@@ -382,7 +383,7 @@ impl FuncHIR {
         let info = &self.exprs[index as usize];
         match &info.expr {
             // never never
-            Expr::DeclVar(_) | Expr::Var(_) |
+            Expr::DeclVar(_) | Expr::Var(_) | Expr::DeclTmp(_) |
             Expr::LitBool(_) | Expr::LitInt(_) | Expr::LitFloat(_) | Expr::LitVoid | Expr::LitChar(_) => Some(false),
 
 
@@ -448,6 +449,7 @@ impl FuncHIR {
                 Some(sig.output == Type::Never)
             }
 
+            Expr::StmtTmp(arg, _) |
             Expr::UnOp(arg, _) |
             Expr::UnOpPrimitive(arg, _) |
             Expr::Ref(arg, _) |

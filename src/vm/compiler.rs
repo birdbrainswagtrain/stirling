@@ -500,6 +500,14 @@ impl<'a> BCompiler<'a> {
                     panic!("bad var decl");
                 }
             }
+            Expr::DeclTmp(tmp_id) => {
+                assert!(mandatory_dest_slot.is_none());
+                let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
+                let slot = self.frame.alloc(*tmp_ty);
+                self.temp_slots.push((*tmp_id,slot));
+
+                None
+            }
             Expr::StmtTmp(arg, temp_list) => {
                 let temp_len = self.temp_slots.len();
                 for tmp_id in temp_list {
@@ -965,6 +973,7 @@ impl<'a> BCompiler<'a> {
     ) -> Option<u32> {
         let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(ty));
         let saved_frame = self.frame;
+        let temp_len = self.temp_slots.len();
 
         for expr_id in &block.stmts {
             self.lower_expr(*expr_id, None);
@@ -974,6 +983,7 @@ impl<'a> BCompiler<'a> {
             self.lower_expr(*expr_id, dest_slot);
         }
         self.frame = saved_frame;
+        self.temp_slots.resize(temp_len, (0xFFFFFFFF,None));
         dest_slot
     }
 

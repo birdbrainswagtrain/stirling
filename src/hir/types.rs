@@ -342,9 +342,13 @@ impl Type {
                     Type::Compound(CompoundType::Ref(t1, m1)),
                     Type::Compound(CompoundType::Ref(t2, m2)),
                 ) => {
-                    assert_eq!(m1, m2);
-                    let unified = t1.unify(*t2);
-                    Type::from_compound(CompoundType::Ref(unified, *m1))
+                    let m = *m1 | *m2;
+                    if t1 != t2 {
+                        let unified = t1.unify(*t2);
+                        Type::from_compound(CompoundType::Ref(unified, m))
+                    } else {
+                        Type::from_compound(CompoundType::Ref(*t1, m))
+                    }
                 }
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
