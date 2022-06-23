@@ -1,7 +1,7 @@
 use crate::builtin::BUILTINS;
 use crate::is_verbose;
 
-use super::func::{Expr, FuncHIR, Block};
+use super::func::{Block, Expr, FuncHIR};
 use super::types::{CompoundType, Signature, Type};
 
 #[derive(Clone, Copy)]
@@ -90,8 +90,7 @@ impl FuncHIR {
             | Expr::DeclVar(_)
             | Expr::DeclTmp(_)
             | Expr::StmtTmp(_, _)
-            | Expr::CastPrimitive(_)
-            => {
+            | Expr::CastPrimitive(_) => {
                 // no-ops
                 CheckResult {
                     mutated: false,
@@ -161,9 +160,7 @@ impl FuncHIR {
                     resolved: r1 && r2,
                 }
             }
-            Expr::Assign(dst, src) => {
-                self.check_match_2(dst, src)
-            }
+            Expr::Assign(dst, src) => self.check_match_2(dst, src),
             Expr::BinOpPrimitive(lhs, op, rhs) => self.check_bin_op(index, lhs, op, rhs),
             Expr::BinOp(lhs, op, rhs) => {
                 let lty = self.exprs[lhs as usize].ty;
@@ -225,12 +222,12 @@ impl FuncHIR {
                         let mutated = self.update_expr_type(index, ty);
                         CheckResult {
                             mutated,
-                            resolved: true
+                            resolved: true,
                         }
                     } else {
                         CheckResult {
                             mutated: false,
-                            resolved: false
+                            resolved: false,
                         }
                     }
                 }
@@ -247,7 +244,7 @@ impl FuncHIR {
                         let ty_then = match self.get_block_is_never(then_block) {
                             Some(true) => Type::Never,
                             Some(false) => Type::Void,
-                            None => Type::Unknown
+                            None => Type::Unknown,
                         };
 
                         let mutated = self.update_expr_type(index, ty_then);
@@ -365,52 +362,55 @@ impl FuncHIR {
             }
             Expr::NewTuple(ref args) => {
                 //let mut tuple_ty = info.ty;
-                
+
                 // force tuple -- todo only init the type if not already a tuple
                 //tuple_ty = tuple_ty.unify( Type::from_compound(CompoundType::Tuple(vec!(Type::Unknown;args.len()))) );
 
                 let mut mutated = false;
 
-                let mut member_tys = if let Type::Compound(CompoundType::Tuple(member_tys,_)) = info.ty {
-                    member_tys.clone()
-                } else {
-                    vec!(Type::Unknown;args.len())
-                };
+                let mut member_tys =
+                    if let Type::Compound(CompoundType::Tuple(member_tys, _)) = info.ty {
+                        member_tys.clone()
+                    } else {
+                        vec![Type::Unknown; args.len()]
+                    };
 
-                assert_eq!(member_tys.len(),args.len());
+                assert_eq!(member_tys.len(), args.len());
 
                 // bad clone :(
-                for (ty,arg_i) in member_tys.iter_mut().zip(args.clone().iter()) {
+                for (ty, arg_i) in member_tys.iter_mut().zip(args.clone().iter()) {
                     mutated |= self.update_expr_type(*arg_i, *ty);
                     *ty = self.exprs[*arg_i as usize].ty;
                 }
 
-                let tuple_ty = Type::from_compound(CompoundType::Tuple(member_tys,Default::default()));
+                let tuple_ty =
+                    Type::from_compound(CompoundType::Tuple(member_tys, Default::default()));
                 mutated |= self.update_expr_type(index, tuple_ty);
 
                 //println!("=> {:?}",member_tys);
 
                 CheckResult {
                     mutated,
-                    resolved: !tuple_ty.is_unknown()
+                    resolved: !tuple_ty.is_unknown(),
                 }
             }
             Expr::IndexTuple(arg, member_n) => {
-
                 let old_tuple_ty = self.exprs[arg as usize].ty;
                 let member_ty = old_tuple_ty.get_tuple_member(member_n).unwrap();
 
                 let mut mutated = self.update_expr_type(index, member_ty);
                 if member_ty != self.exprs[index as usize].ty {
                     let new_member_ty = self.exprs[index as usize].ty;
-                    let new_tuple_ty = old_tuple_ty.set_tuple_member(member_n,new_member_ty).unwrap();
+                    let new_tuple_ty = old_tuple_ty
+                        .set_tuple_member(member_n, new_member_ty)
+                        .unwrap();
 
                     mutated |= self.update_expr_type(arg, new_tuple_ty);
                 }
 
                 CheckResult {
                     mutated,
-                    resolved: !self.exprs[index as usize].ty.is_unknown()
+                    resolved: !self.exprs[index as usize].ty.is_unknown(),
                 }
             }
             _ => panic!("todo check {:?}", info.expr),
@@ -439,21 +439,23 @@ impl FuncHIR {
     }
 
     fn get_expr_is_never(&self, index: u32) -> Option<bool> {
-
         let info = &self.exprs[index as usize];
         match &info.expr {
             // never never
-            Expr::DeclVar(_) | Expr::Var(_) | Expr::DeclTmp(_) |
-            Expr::LitBool(_) | Expr::LitInt(_) | Expr::LitFloat(_) | Expr::LitVoid | Expr::LitChar(_) => Some(false),
-
+            Expr::DeclVar(_)
+            | Expr::Var(_)
+            | Expr::DeclTmp(_)
+            | Expr::LitBool(_)
+            | Expr::LitInt(_)
+            | Expr::LitFloat(_)
+            | Expr::LitVoid
+            | Expr::LitChar(_) => Some(false),
 
             // always never
             Expr::Return(_) => Some(true),
 
             // sometimes never
-            Expr::Block(block) => {
-                self.get_block_is_never(block)
-            }
+            Expr::Block(block) => self.get_block_is_never(block),
             Expr::If(arg, then_block, else_expr) => {
                 if self.get_expr_is_never(*arg)? {
                     return Some(true);
@@ -469,13 +471,11 @@ impl FuncHIR {
                     Some(false)
                 }
             }
-            Expr::While(arg, _) => {
-                self.get_expr_is_never(*arg)
-            }
+            Expr::While(arg, _) => self.get_expr_is_never(*arg),
             Expr::Loop(_) => {
                 // currently we scan the entire expression list for breaks
                 for expr in &self.exprs {
-                    if let Expr::Break(target,_) = expr.expr {
+                    if let Expr::Break(target, _) = expr.expr {
                         if target == index {
                             return Some(false);
                         }
@@ -499,7 +499,7 @@ impl FuncHIR {
                         return Some(true);
                     }
                 }
-                
+
                 let entry = BUILTINS.get(name.as_str());
                 if entry.is_none() {
                     panic!("invalid builtin: {}", name);
@@ -517,32 +517,27 @@ impl FuncHIR {
                 Some(false)
             }
 
-            Expr::IndexTuple(arg, _) |
-            Expr::StmtTmp(arg, _) |
-            Expr::UnOp(arg, _) |
-            Expr::UnOpPrimitive(arg, _) |
-            Expr::Ref(arg, _) |
-            Expr::DeRef(arg) |
-            Expr::CastPrimitive(arg) => {
-                self.get_expr_is_never(*arg)
-            }
+            Expr::IndexTuple(arg, _)
+            | Expr::StmtTmp(arg, _)
+            | Expr::UnOp(arg, _)
+            | Expr::UnOpPrimitive(arg, _)
+            | Expr::Ref(arg, _)
+            | Expr::DeRef(arg)
+            | Expr::CastPrimitive(arg) => self.get_expr_is_never(*arg),
 
-            Expr::Assign(a, b) |
-            Expr::BinOp(a, _, b) |
-            Expr::BinOpPrimitive(a, _, b) => {
+            Expr::Assign(a, b) | Expr::BinOp(a, _, b) | Expr::BinOpPrimitive(a, _, b) => {
                 if self.get_expr_is_never(*a)? {
                     return Some(true);
                 }
 
                 self.get_expr_is_never(*b)
             }
-            
-            _ => panic!("todo never-check {:?}",info.expr)
+
+            _ => panic!("todo never-check {:?}", info.expr),
         }
     }
 
     fn get_block_is_never(&self, block: &Block) -> Option<bool> {
-
         if let Some(res) = block.result {
             if self.get_expr_is_never(res)? {
                 return Some(true);

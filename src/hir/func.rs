@@ -10,7 +10,7 @@ pub struct FuncHIR {
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
     break_index: Vec<(u32, Option<String>)>,
-    nested_temporaries: Vec<u32>
+    nested_temporaries: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -34,7 +34,7 @@ fn is_expr_temporary(expr: &Expr) -> bool {
     match expr {
         Expr::Var(..) | Expr::IndexTuple(..) | Expr::DeRef(..) => false,
         Expr::LitFloat(..) | Expr::LitInt(..) | Expr::Block(_) | Expr::Ref(..) => true,
-        _ => panic!("temp??? {:?}",expr)
+        _ => panic!("temp??? {:?}", expr),
     }
 }
 
@@ -49,7 +49,7 @@ impl FuncHIR {
             exprs: vec![],
             vars: vec![],
             break_index: vec![],
-            nested_temporaries: vec![]
+            nested_temporaries: vec![],
         };
         profile("lower AST -> HIR", || {
             let mut body = Block::new(Some(parent_scope));
@@ -188,7 +188,7 @@ impl Block {
     fn add_stmt(&mut self, id: u32, code: &mut FuncHIR) {
         if code.nested_temporaries.len() > 0 {
             let tmp_list = std::mem::take(&mut code.nested_temporaries);
-            let new_id = code.push_expr(Expr::StmtTmp(id,tmp_list), Type::Void);
+            let new_id = code.push_expr(Expr::StmtTmp(id, tmp_list), Type::Void);
             self.stmts.push(new_id);
         } else {
             self.stmts.push(id);
@@ -355,8 +355,8 @@ impl Block {
                 }
             }
             // control flow-ish stuff
-            syn::Expr::Block(syn::ExprBlock { block, .. }) |
-            syn::Expr::Unsafe(syn::ExprUnsafe{ block, ..}) => {
+            syn::Expr::Block(syn::ExprBlock { block, .. })
+            | syn::Expr::Unsafe(syn::ExprUnsafe { block, .. }) => {
                 let hir_block = self.child_block_from_syn(code, block);
                 code.push_expr(Expr::Block(hir_block), Type::Unknown)
             }
@@ -426,12 +426,12 @@ impl Block {
                     _ => panic!("attempt to call {:?}", func),
                 }
             }
-            syn::Expr::Return(syn::ExprReturn{expr,..}) => {
+            syn::Expr::Return(syn::ExprReturn { expr, .. }) => {
                 if let Some(expr) = expr {
                     let id_arg = self.add_expr(code, expr);
-                    code.push_expr(Expr::Return(Some(id_arg)),Type::Never)
+                    code.push_expr(Expr::Return(Some(id_arg)), Type::Never)
                 } else {
-                    code.push_expr(Expr::Return(None),Type::Never)
+                    code.push_expr(Expr::Return(None), Type::Never)
                 }
             }
             _ => panic!("todo handle expr => {:?}", syn_expr),
@@ -452,7 +452,7 @@ pub enum Expr {
     Var(u32),
     DeclVar(u32),
     DeclTmp(u32),
-    StmtTmp(u32,Vec<u32>),
+    StmtTmp(u32, Vec<u32>),
     BinOp(u32, syn::BinOp, u32),
     BinOpPrimitive(u32, syn::BinOp, u32),
     UnOp(u32, syn::UnOp),

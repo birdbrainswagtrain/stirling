@@ -49,7 +49,7 @@ impl Signature {
 pub enum CompoundType {
     Ref(Type, bool),
     Ptr(Type, bool),
-    Tuple(Vec<Type>,InvisibleMetadata<OnceCell<StructLayout>>),
+    Tuple(Vec<Type>, InvisibleMetadata<OnceCell<StructLayout>>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -170,13 +170,13 @@ impl Type {
                     *self = Type::from_compound(CompoundType::Ptr(new_inner, *is_mut));
                 }
             }
-            Type::Compound(CompoundType::Tuple(fields,_)) => {
+            Type::Compound(CompoundType::Tuple(fields, _)) => {
                 if self.is_unknown() {
                     let mut fields = fields.clone();
                     for field in fields.iter_mut() {
                         field.check_known();
                     }
-                    *self = Type::from_compound(CompoundType::Tuple(fields,Default::default()));
+                    *self = Type::from_compound(CompoundType::Tuple(fields, Default::default()));
                 }
             }
         }
@@ -191,7 +191,7 @@ impl Type {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             Type::Compound(cpx) => match cpx {
                 CompoundType::Ref(t, _) | CompoundType::Ptr(t, _) => t.is_unknown(),
-                CompoundType::Tuple(fields,_) => fields.iter().any(|x| x.is_unknown()),
+                CompoundType::Tuple(fields, _) => fields.iter().any(|x| x.is_unknown()),
             },
         }
     }
@@ -287,8 +287,11 @@ impl Type {
             | Type::Compound(CompoundType::Ptr(..))
             | Type::Compound(CompoundType::Ref(..)) => PTR_WIDTH,
 
-            Type::Compound(CompoundType::Tuple(members,layout)) => {
-                layout.as_ref().get_or_init(|| StructLayout::new(members)).size
+            Type::Compound(CompoundType::Tuple(members, layout)) => {
+                layout
+                    .as_ref()
+                    .get_or_init(|| StructLayout::new(members))
+                    .size
             }
 
             _ => panic!("cannot size {:?}", self),
@@ -308,16 +311,21 @@ impl Type {
 
             Type::Char => 4,
             Type::Bool => 1,
-            Type::Void => 0,
-            Type::Never => 0,
+
+            // ZSTs have alignment 1
+            Type::Void => 1,
+            Type::Never => 1,
 
             Type::Int(IntType::ISize)
             | Type::Int(IntType::USize)
             | Type::Compound(CompoundType::Ptr(..))
             | Type::Compound(CompoundType::Ref(..)) => PTR_WIDTH,
 
-            Type::Compound(CompoundType::Tuple(members,layout)) => {
-                layout.as_ref().get_or_init(|| StructLayout::new(members)).align
+            Type::Compound(CompoundType::Tuple(members, layout)) => {
+                layout
+                    .as_ref()
+                    .get_or_init(|| StructLayout::new(members))
+                    .align
             }
 
             _ => panic!("cannot align {:?}", self),
@@ -326,10 +334,10 @@ impl Type {
 
     pub fn layout(&self) -> &StructLayout {
         match self {
-            Type::Compound(CompoundType::Tuple(members,layout)) => {
+            Type::Compound(CompoundType::Tuple(members, layout)) => {
                 layout.as_ref().get_or_init(|| StructLayout::new(members))
             }
-            _ => panic!("can't get layout for {:?}",self)
+            _ => panic!("can't get layout for {:?}", self),
         }
     }
 
@@ -351,7 +359,6 @@ impl Type {
                 (_, Type::Never) => self,
                 (Type::Never, _) => other,
                 //(Type::Never, x) if x != Type::Unknown => other,
-
                 (
                     Type::Compound(CompoundType::Ref(t1, m1)),
                     Type::Compound(CompoundType::Ref(t2, m2)),
@@ -369,15 +376,13 @@ impl Type {
                     Type::Compound(CompoundType::Tuple(t1, m1)),
                     Type::Compound(CompoundType::Tuple(t2, m2)),
                 ) => {
-                    assert_eq!(t1.len(),t2.len());
+                    assert_eq!(t1.len(), t2.len());
 
-                    let merged: Vec<Type> = t1.iter().zip(t2.iter()).map(|(t1,t2)| {
-                        if t1 == t2 {
-                            *t1
-                        } else {
-                            t1.unify(*t2)
-                        }
-                    }).collect();
+                    let merged: Vec<Type> = t1
+                        .iter()
+                        .zip(t2.iter())
+                        .map(|(t1, t2)| if t1 == t2 { *t1 } else { t1.unify(*t2) })
+                        .collect();
 
                     Type::from_compound(CompoundType::Tuple(merged, Default::default()))
                 }
@@ -400,40 +405,40 @@ impl Type {
 
     pub fn get_tuple_member(self, index: u32) -> Option<Type> {
         match self {
-            Type::Compound(CompoundType::Ref(child,_)) => child.get_tuple_member(index),
-            Type::Compound(CompoundType::Tuple(members,_)) => Some(members[index as usize]),
-            _ => None
+            Type::Compound(CompoundType::Ref(child, _)) => child.get_tuple_member(index),
+            Type::Compound(CompoundType::Tuple(members, _)) => Some(members[index as usize]),
+            _ => None,
         }
     }
 
     pub fn set_tuple_member(self, index: u32, ty: Type) -> Option<Type> {
         match self {
-            Type::Compound(CompoundType::Ref(child,is_mut)) => {
-                let child = child.set_tuple_member(index,ty)?;
-                Some(Type::from_compound(CompoundType::Ref(child,*is_mut)))
+            Type::Compound(CompoundType::Ref(child, is_mut)) => {
+                let child = child.set_tuple_member(index, ty)?;
+                Some(Type::from_compound(CompoundType::Ref(child, *is_mut)))
             }
-            Type::Compound(CompoundType::Tuple(members,_)) => {
+            Type::Compound(CompoundType::Tuple(members, _)) => {
                 let mut new_members = members.clone();
                 new_members[index as usize] = ty;
-                Some(Type::from_compound(CompoundType::Tuple(new_members,Default::default())))
-            },
-            _ => None
+                Some(Type::from_compound(CompoundType::Tuple(
+                    new_members,
+                    Default::default(),
+                )))
+            }
+            _ => None,
         }
     }
 
     pub fn get_referenced_r(self) -> Type {
         match self {
-            Type::Compound(CompoundType::Ref(child,is_mut)) => {
-                child.get_referenced_r()
-            }
-            _ => self
+            Type::Compound(CompoundType::Ref(child, is_mut)) => child.get_referenced_r(),
+            _ => self,
         }
     }
 }
 
-
 /// HACK: Used to attach metadata (such as layout) to a type without making it affect hashing or equality.
-#[derive(Debug,Default)]
+#[derive(Debug, Default)]
 pub struct InvisibleMetadata<T>(T);
 
 impl<T> AsRef<T> for InvisibleMetadata<T> {
@@ -457,18 +462,18 @@ impl<T> std::hash::Hash for InvisibleMetadata<T> {
 }
 
 #[derive(Debug)]
-pub struct StructLayout{
+pub struct StructLayout {
     pub size: usize,
     pub align: usize,
     pub member_offsets: Vec<u32>,
 }
 
-impl StructLayout{
+impl StructLayout {
     fn new(members: &Vec<Type>) -> Self {
-        let mut layout = Self{
+        let mut layout = Self {
             size: 0,
             align: 1,
-            member_offsets: vec!()
+            member_offsets: vec![],
         };
 
         for member in members {

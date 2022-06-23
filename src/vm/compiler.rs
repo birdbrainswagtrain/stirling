@@ -2,17 +2,18 @@ use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{IntType, Type, FloatType, CompoundType},
+        types::{CompoundType, FloatType, IntType, Type},
     },
-    profiler::profile, is_verbose,
+    is_verbose,
+    profiler::profile,
 };
 
 use super::instr::Instr;
 
 #[derive(PartialEq)]
-enum LoopJumpKind{
+enum LoopJumpKind {
     Break,
-    Continue
+    Continue,
 }
 
 struct LoopJump {
@@ -23,25 +24,22 @@ struct LoopJump {
 
 struct LoopResult {
     loop_id: u32,
-    slot: Option<u32>
+    slot: u32,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
 struct FrameAllocator(u32);
 
 impl FrameAllocator {
-    fn alloc(&mut self, ty: Type) -> Option<u32> {
+    fn alloc(&mut self, ty: Type) -> u32 {
         let size = ty.byte_size() as u32;
-        if size == 0 {
-            return None;
-        }
         let align = ty.byte_align() as u32;
         while self.0 % align != 0 {
             self.0 += 1;
         }
         let offset = self.0;
         self.0 += size;
-        Some(offset)
+        offset
     }
 
     fn align_for_call(&mut self) -> u32 {
@@ -59,14 +57,14 @@ pub fn compile(func: &Function) -> Vec<Instr> {
 
     profile("lower HIR -> BC", || {
         let mut frame = FrameAllocator::default();
-        let return_slot = frame.alloc(Type::Int(IntType::USize)).unwrap();
+        let return_slot = frame.alloc(Type::Int(IntType::USize));
 
-        assert_eq!(return_slot,0);
+        assert_eq!(return_slot, 0);
 
         let mut var_map = vec![None; input_fn.vars.len()];
 
         for (i, input) in sig.inputs.iter().enumerate() {
-            var_map[i] = frame.alloc(*input);
+            var_map[i] = Some(frame.alloc(*input));
         }
 
         let mut compiler = BCompiler {
@@ -77,7 +75,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
             frame,
             temp_slots: Vec::new(),
             loop_jumps: Vec::new(),
-            loop_results: Vec::new()
+            loop_results: Vec::new(),
         };
 
         let res = compiler.lower_expr(input_fn.root_expr as u32, None);
@@ -99,9 +97,9 @@ struct BCompiler<'a> {
     code_frame_depth: Vec<u32>,
     input_fn: &'a FuncHIR,
     frame: FrameAllocator,
-    temp_slots: Vec<(u32,Option<u32>)>,
+    temp_slots: Vec<(u32, u32)>,
     loop_jumps: Vec<LoopJump>,
-    loop_results: Vec<LoopResult>
+    loop_results: Vec<LoopResult>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -171,7 +169,7 @@ fn bin_op_float(op: syn::BinOp) -> (BinOpFloat, BinOpFlag) {
         syn::BinOp::Le(_) => (BinOpFloat::LtEq, BinOpFlag::None),
         syn::BinOp::Gt(_) => (BinOpFloat::Gt, BinOpFlag::None),
         syn::BinOp::Ge(_) => (BinOpFloat::GtEq, BinOpFlag::None),
-        _ => panic!("can not apply {:?} to floats",op)
+        _ => panic!("can not apply {:?} to floats", op),
     }
 }
 
@@ -360,7 +358,7 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
 
             _ => panic!("binop nyi {:?} {:?}", arg_ty, op),
         };
-        (instr,flag)
+        (instr, flag)
     } else {
         panic!("todo more bin ops");
     }
@@ -372,13 +370,13 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
         match (op, width) {
             (syn::UnOp::Neg(_), 1) => Instr::I8_Neg,
             (syn::UnOp::Not(_), 1) => Instr::I8_Not,
-        
+
             (syn::UnOp::Neg(_), 2) => Instr::I16_Neg,
             (syn::UnOp::Not(_), 2) => Instr::I16_Not,
-        
+
             (syn::UnOp::Neg(_), 4) => Instr::I32_Neg,
             (syn::UnOp::Not(_), 4) => Instr::I32_Not,
-        
+
             (syn::UnOp::Neg(_), 8) => Instr::I64_Neg,
             (syn::UnOp::Not(_), 8) => Instr::I64_Not,
 
@@ -390,18 +388,20 @@ fn instr_for_un_op(op: syn::UnOp, ty: Type) -> fn(u32, u32) -> Instr {
         match (op, ty) {
             (syn::UnOp::Neg(_), Type::Float(FloatType::F64)) => Instr::F64_Neg,
             (syn::UnOp::Neg(_), Type::Float(FloatType::F32)) => Instr::F32_Neg,
-            _ => panic!("un-op float {:?} {:?}",op,ty)
+            _ => panic!("un-op float {:?} {:?}", op, ty),
         }
     } else if ty == Type::Bool {
         if let syn::UnOp::Not(_) = op {
             Instr::Bool_Not
         } else {
-            panic!("un-op bool {:?}",op);
+            panic!("un-op bool {:?}", op);
         }
     } else {
-        panic!("todo un-op {:?}",ty);
+        panic!("todo un-op {:?}", ty);
     }
 }
+
+const SLOT_INVALID: u32 = 0xFFFFFFFF;
 
 impl<'a> BCompiler<'a> {
     fn resolve_loop_jumps(&mut self, loop_id: u32, continue_pc: i32, break_pc: i32) {
@@ -410,7 +410,8 @@ impl<'a> BCompiler<'a> {
                 if jump.kind == LoopJumpKind::Break {
                     self.code[jump.instr_index] = Instr::Jump(break_pc - jump.instr_index as i32);
                 } else {
-                    self.code[jump.instr_index] = Instr::Jump(continue_pc - jump.instr_index as i32);
+                    self.code[jump.instr_index] =
+                        Instr::Jump(continue_pc - jump.instr_index as i32);
                 }
                 return false;
             }
@@ -418,13 +419,13 @@ impl<'a> BCompiler<'a> {
         });
     }
 
-    fn get_loop_result(&self, loop_id: u32) -> Option<u32> {
+    fn get_loop_result(&self, loop_id: u32) -> u32 {
         for entry in &self.loop_results {
             if entry.loop_id == loop_id {
                 return entry.slot;
             }
         }
-        panic!("no result for loop {}",loop_id);
+        panic!("no result for loop {}", loop_id);
     }
 
     fn push_code(&mut self, ins: Instr) {
@@ -433,10 +434,10 @@ impl<'a> BCompiler<'a> {
         self.code_frame_depth.push(self.frame.0);
     }
 
-    fn try_get_place_slot(&mut self, expr_id: u32) -> Option<Option<u32>> {
+    fn try_get_place_slot(&mut self, expr_id: u32) -> Option<u32> {
         let expr = &self.input_fn.exprs[expr_id as usize].expr;
         if let Expr::Var(id) = expr {
-            let res = self.var_map[*id as usize];
+            let res = self.var_map[*id as usize].unwrap();
             Some(res)
         } else if let Expr::IndexTuple(arg, member_n) = expr {
             let arg_ty = self.input_fn.exprs[*arg as usize].ty;
@@ -445,14 +446,14 @@ impl<'a> BCompiler<'a> {
             } else if let Some(base) = self.try_get_place_slot(*arg) {
                 let layout = arg_ty.layout();
                 let offset = layout.member_offsets[*member_n as usize];
-                let member_slot = base.unwrap() + offset as u32;
+                let member_slot = base + offset as u32;
 
-                Some(Some(member_slot))
+                Some(member_slot)
             } else {
                 None
             }
         } else if let Some(res) = self.try_get_temp_slot(expr_id) {
-            self.lower_expr(expr_id, res);
+            self.lower_expr(expr_id, Some(res));
             Some(res)
         } else {
             None
@@ -463,15 +464,15 @@ impl<'a> BCompiler<'a> {
     fn get_struct_addr(&mut self, expr_id: u32) -> u32 {
         let ty = &self.input_fn.exprs[expr_id as usize].ty;
         match ty {
-            Type::Compound(CompoundType::Ref(wrapped_ty,_)) => {
-                let slot = self.lower_expr(expr_id, None).unwrap();
-                if let Type::Compound(CompoundType::Ref(wrapped_ty,_)) = wrapped_ty {       
-                    let tmp_slot = self.frame.alloc(Type::Int(IntType::U64)).unwrap();
+            Type::Compound(CompoundType::Ref(wrapped_ty, _)) => {
+                let slot = self.lower_expr(expr_id, None);
+                if let Type::Compound(CompoundType::Ref(wrapped_ty, _)) = wrapped_ty {
+                    let tmp_slot = self.frame.alloc(Type::Int(IntType::USize));
 
                     self.push_code(Instr::MovSP8(tmp_slot, slot));
 
                     let mut wrapped_ty = *wrapped_ty;
-                    while let Type::Compound(CompoundType::Ref(wt,_)) = wrapped_ty {
+                    while let Type::Compound(CompoundType::Ref(wt, _)) = wrapped_ty {
                         wrapped_ty = *wt;
                         self.push_code(Instr::MovSP8(tmp_slot, tmp_slot));
                     }
@@ -481,24 +482,22 @@ impl<'a> BCompiler<'a> {
                     slot
                 }
             }
-            _ => self.get_place_addr(expr_id,None)
+            _ => self.get_place_addr(expr_id, None),
         }
     }
 
     fn get_place_addr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> u32 {
         if let Some(ref_slot) = self.try_get_place_slot(expr_id) {
             // destinations for pointers should always be valid
-            let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Int(IntType::U64))).unwrap();
-            if let Some(ref_slot) = ref_slot {
-                self.push_code(Instr::SlotPtr(dest_slot, ref_slot));
-            } else {
-                self.push_code(Instr::I64_Const(dest_slot, 0));
-            }
+            let dest_slot =
+                mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(Type::Int(IntType::USize)));
+            self.push_code(Instr::SlotPtr(dest_slot, ref_slot));
+
             dest_slot
         } else {
             let expr = &self.input_fn.exprs[expr_id as usize].expr;
             if let Expr::DeRef(arg) = expr {
-                self.lower_expr(*arg, mandatory_dest_slot).unwrap()
+                self.lower_expr(*arg, mandatory_dest_slot)
             } else if let Expr::IndexTuple(arg, member_n) = expr {
                 let arg_ty = &self.input_fn.exprs[*arg as usize].ty;
                 let tuple_ty = arg_ty.get_referenced_r();
@@ -506,17 +505,18 @@ impl<'a> BCompiler<'a> {
                 let offset = layout.member_offsets[*member_n as usize];
 
                 let base_slot = self.get_struct_addr(*arg);
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Int(IntType::U64))).unwrap();
+                let dest_slot = mandatory_dest_slot
+                    .unwrap_or_else(|| self.frame.alloc(Type::Int(IntType::USize)));
                 self.push_code(Instr::OffsetPtr(dest_slot, base_slot, offset));
                 dest_slot
             } else {
-                panic!("todo ref? {:?}",expr)
+                panic!("todo ref? {:?}", expr)
             }
         }
     }
 
-    fn try_get_temp_slot(&self, expr_id: u32) -> Option<Option<u32>> {
-        for (id,slot) in &self.temp_slots {
+    fn try_get_temp_slot(&self, expr_id: u32) -> Option<u32> {
+        for (id, slot) in &self.temp_slots {
             if *id == expr_id {
                 return Some(*slot);
             }
@@ -524,57 +524,35 @@ impl<'a> BCompiler<'a> {
         None
     }
 
-    fn lower_expr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
+    fn lower_expr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> u32 {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
 
         let saved_frame = self.frame;
 
         let res_slot = match expr {
-            /*Expr::Var(id) => {
-                let src = self.var_map[*id as usize];
-                if mandatory_dest_slot.is_none() {
-                    src
-                } else {
-                    self.insert_move_ss(mandatory_dest_slot.unwrap(), src.unwrap(), *ty);
-                    mandatory_dest_slot
-                }
-            }*/
+            // place exprs
             Expr::Var(..) | Expr::IndexTuple(..) => {
                 if let Some(slot) = self.try_get_place_slot(expr_id) {
-                    if mandatory_dest_slot.is_none() {
-                        slot
-                    } else {
-                        self.insert_move_ss(mandatory_dest_slot.unwrap(), slot.unwrap(), *ty);
+                    if let Some(mandatory_dest_slot) = mandatory_dest_slot {
+                        self.insert_move_ss(mandatory_dest_slot, slot, *ty);
                         mandatory_dest_slot
+                    } else {
+                        slot
                     }
                 } else {
-                    let res_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty)).unwrap();
+                    let res_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
                     let ptr_slot = self.get_place_addr(expr_id, None);
                     self.insert_move_sp(res_slot, ptr_slot, *ty);
-                    Some(res_slot)
+                    res_slot
                 }
-                /*let arg_ty = self.input_fn.exprs[*arg as usize].ty;
-                let layout = arg_ty.layout();
-                let offset = layout.member_offsets[*member_n as usize];
-
-                if let Some(base) = self.try_get_place_slot(*arg) {
-                    let member_slot = base.unwrap() + offset as u32;
-                    if mandatory_dest_slot.is_none() {
-                        Some(member_slot)
-                    } else {
-                        panic!("aaaaah");
-                    }
-                    //self.lower_expr(*src, Some(member_slot));
-                } else {
-                    panic!("tuple ptr");
-                }*/
             }
+
             Expr::DeclVar(id) => {
                 assert!(mandatory_dest_slot.is_none());
                 let var_info = &self.input_fn.exprs[*id as usize];
                 if let Expr::Var(var_index) = var_info.expr {
-                    self.var_map[var_index as usize] = self.frame.alloc(var_info.ty);
-                    return None;
+                    self.var_map[var_index as usize] = Some(self.frame.alloc(var_info.ty));
+                    SLOT_INVALID
                 } else {
                     panic!("bad var decl");
                 }
@@ -583,9 +561,9 @@ impl<'a> BCompiler<'a> {
                 assert!(mandatory_dest_slot.is_none());
                 let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
                 let slot = self.frame.alloc(*tmp_ty);
-                self.temp_slots.push((*tmp_id,slot));
+                self.temp_slots.push((*tmp_id, slot));
 
-                None
+                SLOT_INVALID
             }
             Expr::StmtTmp(arg, temp_list) => {
                 let temp_len = self.temp_slots.len();
@@ -593,99 +571,96 @@ impl<'a> BCompiler<'a> {
                     let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
                     let slot = self.frame.alloc(*tmp_ty);
                     //println!("alloc temp {:?}",slot);
-                    self.temp_slots.push((*tmp_id,slot));
+                    self.temp_slots.push((*tmp_id, slot));
                 }
 
                 self.lower_expr(*arg, None);
 
-                self.temp_slots.resize(temp_len, (0xFFFFFFFF,None));
+                self.temp_slots
+                    .resize(temp_len, (SLOT_INVALID, SLOT_INVALID));
                 self.frame = saved_frame;
-                None
+                SLOT_INVALID
             }
             Expr::Assign(dest, src) => {
-                assert!(mandatory_dest_slot.is_none());
+                // ignore mandatory_dest_slot -- our result is always void
 
                 if let Some(dest_slot) = self.try_get_place_slot(*dest) {
-                    self.lower_expr(*src, dest_slot);
+                    self.lower_expr(*src, Some(dest_slot));
                 } else {
                     let ptr_slot = self.get_place_addr(*dest, None);
                     let src_slot = self.lower_expr(*src, None);
-                    if let Some(src_slot) = src_slot {
-                        let arg_ty = self.input_fn.exprs[*src as usize].ty;
-                        self.insert_move_ps(ptr_slot, src_slot, arg_ty);
-                    }
+
+                    let arg_ty = self.input_fn.exprs[*src as usize].ty;
+                    self.insert_move_ps(ptr_slot, src_slot, arg_ty);
                 }
                 self.frame = saved_frame; // reset stack
-                None
+                SLOT_INVALID
             }
-            Expr::Ref(arg, _) => {
-                Some(self.get_place_addr(*arg,mandatory_dest_slot))
-            }
+            Expr::Ref(arg, _) => self.get_place_addr(*arg, mandatory_dest_slot),
             Expr::DeRef(arg) => {
                 // converts a pointer to a value -- this is probably going to cause problems
-                let ptr = self.lower_expr(*arg, None).unwrap();
+                let ptr = self.lower_expr(*arg, None);
                 self.frame = saved_frame; // arg ready, reset stack
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                if let Some(dest_slot) = dest_slot {
-                    self.insert_move_sp(dest_slot, ptr, *ty);
-                }
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                self.insert_move_sp(dest_slot, ptr, *ty);
                 dest_slot
             }
-            Expr::LitVoid => {
-                None
-            }
+            Expr::LitVoid => SLOT_INVALID,
             Expr::LitBool(val) => {
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                if let Some(dest_slot) = dest_slot {
-                    self.push_code(Instr::I8_Const(dest_slot, *val as i8));
-                }
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                self.push_code(Instr::I8_Const(dest_slot, *val as i8));
                 dest_slot
             }
             Expr::LitChar(val) => {
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                if let Some(dest_slot) = dest_slot {
-                    self.push_code(Instr::I32_Const(dest_slot, *val as i32));
-                }
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                self.push_code(Instr::I32_Const(dest_slot, *val as i32));
                 dest_slot
             }
             Expr::LitInt(n) => {
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                if let Some(dest_slot) = dest_slot {
-                    let width = ty.byte_size();
-                    match width {
-                        1 => self.push_code(Instr::I8_Const(dest_slot, *n as i8)),
-                        2 => self.push_code(Instr::I16_Const(dest_slot, *n as i16)),
-                        4 => self.push_code(Instr::I32_Const(dest_slot, *n as i32)),
-                        8 => self.push_code(Instr::I64_Const(dest_slot, *n as i64)),
-                        16 => {
-                            let n_ref= Box::new(*n as i128);
-                            self.push_code(Instr::I128_Const(dest_slot, n_ref));
-                        }
-                        _ => panic!("todo more literal ints")
-                    };
-                }
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+
+                let width = ty.byte_size();
+                match width {
+                    1 => self.push_code(Instr::I8_Const(dest_slot, *n as i8)),
+                    2 => self.push_code(Instr::I16_Const(dest_slot, *n as i16)),
+                    4 => self.push_code(Instr::I32_Const(dest_slot, *n as i32)),
+                    8 => self.push_code(Instr::I64_Const(dest_slot, *n as i64)),
+                    16 => {
+                        let n_ref = Box::new(*n as i128);
+                        self.push_code(Instr::I128_Const(dest_slot, n_ref));
+                    }
+                    _ => panic!("todo more literal ints"),
+                };
+
                 dest_slot
             }
             Expr::LitFloat(n) => {
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                if let Some(dest_slot) = dest_slot {
-                    match ty {
-                        Type::Float(FloatType::F64) => self.push_code(Instr::F64_Const(dest_slot, *n as f64)),
-                        Type::Float(FloatType::F32) => self.push_code(Instr::F32_Const(dest_slot, *n as f32)),
-                        _ => panic!("todo more literal floats")
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+
+                match ty {
+                    Type::Float(FloatType::F64) => {
+                        self.push_code(Instr::F64_Const(dest_slot, *n as f64))
                     }
+                    Type::Float(FloatType::F32) => {
+                        self.push_code(Instr::F32_Const(dest_slot, *n as f32))
+                    }
+                    _ => panic!("todo more literal floats"),
                 }
+
                 dest_slot
             }
             Expr::CastPrimitive(src) => {
                 let src_ty = self.input_fn.exprs[*src as usize].ty;
                 let res_ty = ty;
 
-                let cast_ins_ctor: Option<fn(u32,u32)->Instr> = if src_ty == *res_ty {
+                let cast_ins_ctor: Option<fn(u32, u32) -> Instr> = if src_ty == *res_ty {
                     None
-                } else if 
-                    ((src_ty.is_int() || src_ty.is_ptr() || src_ty == Type::Bool || src_ty == Type::Char) && res_ty.is_int()) ||
-                    ((src_ty.is_int() || src_ty.is_ptr() || src_ty.is_ref()) && res_ty.is_ptr())
+                } else if ((src_ty.is_int()
+                    || src_ty.is_ptr()
+                    || src_ty == Type::Bool
+                    || src_ty == Type::Char)
+                    && res_ty.is_int())
+                    || ((src_ty.is_int() || src_ty.is_ptr() || src_ty.is_ref()) && res_ty.is_ptr())
                 {
                     let src_width = src_ty.byte_size();
                     let res_width = res_ty.byte_size();
@@ -693,7 +668,6 @@ impl<'a> BCompiler<'a> {
                     if src_width < res_width {
                         let signed = src_ty.is_signed();
                         Some(match (src_width, res_width, signed) {
-
                             (1, 2, true) => Instr::I16_S_Widen_8,
                             (1, 2, false) => Instr::I16_U_Widen_8,
 
@@ -724,63 +698,147 @@ impl<'a> BCompiler<'a> {
                         None
                     }
                 } else {
-                    Some(match (src_ty,res_ty) {
+                    Some(match (src_ty, res_ty) {
                         (Type::Int(IntType::U8), Type::Char) => Instr::I32_U_Widen_8,
-                        (Type::Float(FloatType::F64), Type::Float(FloatType::F32)) => Instr::F32_From_F64,
-                        (Type::Float(FloatType::F32), Type::Float(FloatType::F64)) => Instr::F64_From_F32,
+                        (Type::Float(FloatType::F64), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_F64
+                        }
+                        (Type::Float(FloatType::F32), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_F32
+                        }
 
-                        (Type::Int(IntType::I8), Type::Float(FloatType::F32)) => Instr::F32_From_I8_S,
-                        (Type::Int(IntType::U8), Type::Float(FloatType::F32)) => Instr::F32_From_I8_U,
-                        (Type::Int(IntType::I16), Type::Float(FloatType::F32)) => Instr::F32_From_I16_S,
-                        (Type::Int(IntType::U16), Type::Float(FloatType::F32)) => Instr::F32_From_I16_U,
-                        (Type::Int(IntType::I32), Type::Float(FloatType::F32)) => Instr::F32_From_I32_S,
-                        (Type::Int(IntType::U32), Type::Float(FloatType::F32)) => Instr::F32_From_I32_U,
-                        (Type::Int(IntType::I64), Type::Float(FloatType::F32)) => Instr::F32_From_I64_S,
-                        (Type::Int(IntType::U64), Type::Float(FloatType::F32)) => Instr::F32_From_I64_U,
-                        (Type::Int(IntType::I128), Type::Float(FloatType::F32)) => Instr::F32_From_I128_S,
-                        (Type::Int(IntType::U128), Type::Float(FloatType::F32)) => Instr::F32_From_I128_U,
+                        (Type::Int(IntType::I8), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I8_S
+                        }
+                        (Type::Int(IntType::U8), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I8_U
+                        }
+                        (Type::Int(IntType::I16), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I16_S
+                        }
+                        (Type::Int(IntType::U16), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I16_U
+                        }
+                        (Type::Int(IntType::I32), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I32_S
+                        }
+                        (Type::Int(IntType::U32), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I32_U
+                        }
+                        (Type::Int(IntType::I64), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I64_S
+                        }
+                        (Type::Int(IntType::U64), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I64_U
+                        }
+                        (Type::Int(IntType::I128), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I128_S
+                        }
+                        (Type::Int(IntType::U128), Type::Float(FloatType::F32)) => {
+                            Instr::F32_From_I128_U
+                        }
 
-                        (Type::Int(IntType::I8), Type::Float(FloatType::F64)) => Instr::F64_From_I8_S,
-                        (Type::Int(IntType::U8), Type::Float(FloatType::F64)) => Instr::F64_From_I8_U,
-                        (Type::Int(IntType::I16), Type::Float(FloatType::F64)) => Instr::F64_From_I16_S,
-                        (Type::Int(IntType::U16), Type::Float(FloatType::F64)) => Instr::F64_From_I16_U,
-                        (Type::Int(IntType::I32), Type::Float(FloatType::F64)) => Instr::F64_From_I32_S,
-                        (Type::Int(IntType::U32), Type::Float(FloatType::F64)) => Instr::F64_From_I32_U,
-                        (Type::Int(IntType::I64), Type::Float(FloatType::F64)) => Instr::F64_From_I64_S,
-                        (Type::Int(IntType::U64), Type::Float(FloatType::F64)) => Instr::F64_From_I64_U,
-                        (Type::Int(IntType::I128), Type::Float(FloatType::F64)) => Instr::F64_From_I128_S,
-                        (Type::Int(IntType::U128), Type::Float(FloatType::F64)) => Instr::F64_From_I128_U,
+                        (Type::Int(IntType::I8), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I8_S
+                        }
+                        (Type::Int(IntType::U8), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I8_U
+                        }
+                        (Type::Int(IntType::I16), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I16_S
+                        }
+                        (Type::Int(IntType::U16), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I16_U
+                        }
+                        (Type::Int(IntType::I32), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I32_S
+                        }
+                        (Type::Int(IntType::U32), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I32_U
+                        }
+                        (Type::Int(IntType::I64), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I64_S
+                        }
+                        (Type::Int(IntType::U64), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I64_U
+                        }
+                        (Type::Int(IntType::I128), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I128_S
+                        }
+                        (Type::Int(IntType::U128), Type::Float(FloatType::F64)) => {
+                            Instr::F64_From_I128_U
+                        }
 
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I8)) => Instr::F32_Into_I8_S,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U8)) => Instr::F32_Into_I8_U,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I16)) => Instr::F32_Into_I16_S,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U16)) => Instr::F32_Into_I16_U,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I32)) => Instr::F32_Into_I32_S,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U32)) => Instr::F32_Into_I32_U,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I64)) => Instr::F32_Into_I64_S,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U64)) => Instr::F32_Into_I64_U,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I128)) => Instr::F32_Into_I128_S,
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U128)) => Instr::F32_Into_I128_U,
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I8)) => {
+                            Instr::F32_Into_I8_S
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U8)) => {
+                            Instr::F32_Into_I8_U
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I16)) => {
+                            Instr::F32_Into_I16_S
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U16)) => {
+                            Instr::F32_Into_I16_U
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I32)) => {
+                            Instr::F32_Into_I32_S
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U32)) => {
+                            Instr::F32_Into_I32_U
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I64)) => {
+                            Instr::F32_Into_I64_S
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U64)) => {
+                            Instr::F32_Into_I64_U
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::I128)) => {
+                            Instr::F32_Into_I128_S
+                        }
+                        (Type::Float(FloatType::F32), Type::Int(IntType::U128)) => {
+                            Instr::F32_Into_I128_U
+                        }
 
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I8)) => Instr::F64_Into_I8_S,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U8)) => Instr::F64_Into_I8_U,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I16)) => Instr::F64_Into_I16_S,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U16)) => Instr::F64_Into_I16_U,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I32)) => Instr::F64_Into_I32_S,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U32)) => Instr::F64_Into_I32_U,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I64)) => Instr::F64_Into_I64_S,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U64)) => Instr::F64_Into_I64_U,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I128)) => Instr::F64_Into_I128_S,
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U128)) => Instr::F64_Into_I128_U,
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I8)) => {
+                            Instr::F64_Into_I8_S
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U8)) => {
+                            Instr::F64_Into_I8_U
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I16)) => {
+                            Instr::F64_Into_I16_S
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U16)) => {
+                            Instr::F64_Into_I16_U
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I32)) => {
+                            Instr::F64_Into_I32_S
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U32)) => {
+                            Instr::F64_Into_I32_U
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I64)) => {
+                            Instr::F64_Into_I64_S
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U64)) => {
+                            Instr::F64_Into_I64_U
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::I128)) => {
+                            Instr::F64_Into_I128_S
+                        }
+                        (Type::Float(FloatType::F64), Type::Int(IntType::U128)) => {
+                            Instr::F64_Into_I128_U
+                        }
 
-                        _ => panic!("cast {:?} -> {:?}", src_ty, res_ty)
+                        _ => panic!("cast {:?} -> {:?}", src_ty, res_ty),
                     })
                 };
                 if let Some(cast_ins_ctor) = cast_ins_ctor {
-                    let src_slot = self.lower_expr(*src, None).unwrap();
+                    let src_slot = self.lower_expr(*src, None);
                     self.frame = saved_frame; // arg ready, reset stack
-                    let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                    let ins = cast_ins_ctor(dest_slot.unwrap(), src_slot);
+                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                    let ins = cast_ins_ctor(dest_slot, src_slot);
                     self.push_code(ins);
                     dest_slot
                 } else {
@@ -792,21 +850,27 @@ impl<'a> BCompiler<'a> {
                 let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
 
                 match op {
-                    syn::BinOp::And(_) => return self.lower_lazy_logic(true,*lhs,*rhs,mandatory_dest_slot),
-                    syn::BinOp::Or(_) => return self.lower_lazy_logic(false,*lhs,*rhs,mandatory_dest_slot),
-                    _ => ()
+                    syn::BinOp::And(_) => {
+                        return self.lower_lazy_logic(true, *lhs, *rhs, mandatory_dest_slot)
+                    }
+                    syn::BinOp::Or(_) => {
+                        return self.lower_lazy_logic(false, *lhs, *rhs, mandatory_dest_slot)
+                    }
+                    _ => (),
                 }
 
                 let (ins_ctor, flag) = instr_for_bin_op(*op, arg_ty);
 
                 if flag == BinOpFlag::Assign {
-                    assert!(mandatory_dest_slot.is_none()); // should never have a destination
-                    let r_slot = self.lower_expr(*rhs, None).unwrap();
+                    // ignore mandatory_dest_slot -- our result is always void
+
+                    let r_slot = self.lower_expr(*rhs, None);
                     if let Some(l_slot) = self.try_get_place_slot(*lhs) {
-                        let ins = ins_ctor(l_slot.unwrap(), l_slot.unwrap(), r_slot);
+                        let ins = ins_ctor(l_slot, l_slot, r_slot);
                         self.push_code(ins);
                     } else {
-                        let tmp_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(arg_ty)).unwrap();
+                        let tmp_slot =
+                            mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(arg_ty));
                         let ptr_slot = self.get_place_addr(*lhs, None);
 
                         // move value to stack
@@ -814,190 +878,178 @@ impl<'a> BCompiler<'a> {
 
                         let ins = ins_ctor(tmp_slot, tmp_slot, r_slot);
                         self.push_code(ins);
-                        
+
                         // move value back to ptr
                         self.insert_move_ps(ptr_slot, tmp_slot, arg_ty);
                     }
                     self.frame = saved_frame; // all done, reset stack
-                    None
+
+                    SLOT_INVALID
                 } else {
-                    let l_slot = self.lower_expr(*lhs, None).unwrap();
-                    let r_slot = self.lower_expr(*rhs, None).unwrap();
+                    let l_slot = self.lower_expr(*lhs, None);
+                    let r_slot = self.lower_expr(*rhs, None);
 
                     self.frame = saved_frame; // args ready, reset stack
 
-                    let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                    
+                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+
                     let ins = if flag == BinOpFlag::SwapArgs {
-                        ins_ctor(dest_slot.unwrap(), r_slot, l_slot)
+                        ins_ctor(dest_slot, r_slot, l_slot)
                     } else {
-                        ins_ctor(dest_slot.unwrap(), l_slot, r_slot)
+                        ins_ctor(dest_slot, l_slot, r_slot)
                     };
                     self.push_code(ins);
                     dest_slot
                 }
             }
             Expr::UnOpPrimitive(arg, op) => {
-                let arg_slot = self.lower_expr(*arg, None).unwrap();
+                let arg_slot = self.lower_expr(*arg, None);
                 let ins_ctor = instr_for_un_op(*op, *ty);
                 self.frame = saved_frame; // arg ready, reset stack
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
-                let ins = ins_ctor(dest_slot.unwrap(), arg_slot);
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let ins = ins_ctor(dest_slot, arg_slot);
                 self.push_code(ins);
                 dest_slot
             }
             Expr::CallBuiltin(name, args) => {
                 if name == "print_int" {
-                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    let arg_slot = self.lower_expr(args[0], None);
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_int(arg_slot));
-                    None
                 } else if name == "print_uint" {
-                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    let arg_slot = self.lower_expr(args[0], None);
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_uint(arg_slot));
-                    None
                 } else if name == "print_float" {
-                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    let arg_slot = self.lower_expr(args[0], None);
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_float(arg_slot));
-                    None
                 } else if name == "print_bool" {
-                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    let arg_slot = self.lower_expr(args[0], None);
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_bool(arg_slot));
-                    None
                 } else if name == "print_char" {
-                    let arg_slot = self.lower_expr(args[0], None).unwrap();
+                    let arg_slot = self.lower_expr(args[0], None);
                     self.frame = saved_frame; // args ready, reset stack
                     self.push_code(Instr::BuiltIn_print_char(arg_slot));
-                    None
                 } else {
                     panic!("unknown builtin");
                 }
+                SLOT_INVALID
             }
             Expr::Block(block) => self.lower_block(block, *ty, mandatory_dest_slot),
             Expr::Break(loop_id, break_expr) => {
                 if let Some(break_expr) = break_expr {
                     let dest_slot = self.get_loop_result(*loop_id);
-                    self.lower_expr(*break_expr, dest_slot);
+                    self.lower_expr(*break_expr, Some(dest_slot));
                 }
                 let instr_index = self.code.len();
                 self.push_code(Instr::Bad);
-                self.loop_jumps.push(LoopJump{
+                self.loop_jumps.push(LoopJump {
                     kind: LoopJumpKind::Break,
                     loop_id: *loop_id,
-                    instr_index
+                    instr_index,
                 });
-                None
+                SLOT_INVALID
             }
             Expr::Continue(loop_id) => {
                 let instr_index = self.code.len();
                 self.push_code(Instr::Bad);
-                self.loop_jumps.push(LoopJump{
+                self.loop_jumps.push(LoopJump {
                     kind: LoopJumpKind::Continue,
                     loop_id: *loop_id,
-                    instr_index
+                    instr_index,
                 });
-                None
+                SLOT_INVALID
             }
             Expr::While(cond, body) => {
-                assert!(mandatory_dest_slot.is_none());
+                // ignore mandatory_dest_slot
                 let pc_start = self.code.len() as i32;
                 let cond_slot = self.frame.alloc(Type::Bool);
-                self.lower_expr(*cond, cond_slot);
+                self.lower_expr(*cond, Some(cond_slot));
                 let pc_cond_jump = self.code.len();
                 self.frame = saved_frame; // cond_read, reset stack
                 self.push_code(Instr::Bad);
 
-                let block_res = self.lower_block(body, Type::Void, None);
-                assert!(block_res.is_none());
+                self.lower_block(body, Type::Void, None);
+
                 let pc_end = self.code.len() as i32;
                 self.push_code(Instr::Jump(pc_start - pc_end));
                 // need to offset + 1 to make it past the end
-                self.code[pc_cond_jump] =
-                    Instr::JumpF(pc_end - pc_cond_jump as i32 + 1, cond_slot.unwrap());
+                self.code[pc_cond_jump] = Instr::JumpF(pc_end - pc_cond_jump as i32 + 1, cond_slot);
 
                 self.resolve_loop_jumps(expr_id, pc_start, pc_end + 1);
 
-                None
+                SLOT_INVALID
             }
             Expr::Loop(body) => {
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
                 self.loop_results.push(LoopResult {
                     loop_id: expr_id,
-                    slot: dest_slot
+                    slot: dest_slot,
                 });
 
                 let pc_start = self.code.len() as i32;
-                let block_res = self.lower_block(body, Type::Void, None);
-                assert!(block_res.is_none());
+                self.lower_block(body, Type::Void, None);
                 let pc_end = self.code.len() as i32;
                 self.push_code(Instr::Jump(pc_start - pc_end));
 
                 self.loop_results.pop();
                 self.resolve_loop_jumps(expr_id, pc_start, pc_end + 1);
 
-                None
+                dest_slot
             }
-            Expr::If(cond,then_block,else_expr) => {
-
+            Expr::If(cond, then_block, else_expr) => {
                 let cond_slot = self.frame.alloc(Type::Bool);
-                self.lower_expr(*cond, cond_slot);
+                self.lower_expr(*cond, Some(cond_slot));
                 let pc_jump_then = self.code.len();
                 self.frame = saved_frame; // cond_read, reset stack
                 self.push_code(Instr::Bad);
 
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
                 let saved_frame = self.frame;
 
-                self.lower_block(then_block, *ty, dest_slot);
-                
+                self.lower_block(then_block, *ty, Some(dest_slot));
+
                 if let Some(else_expr) = else_expr {
                     let pc_jump_else = self.code.len();
                     self.push_code(Instr::Bad);
 
                     let pc_end_then = self.code.len() as i32;
-                    
-                    self.lower_expr(*else_expr, dest_slot);
-                    
+
+                    self.lower_expr(*else_expr, Some(dest_slot));
+
                     let pc_end_else = self.code.len() as i32;
 
                     self.code[pc_jump_then] =
-                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot.unwrap());
-                    self.code[pc_jump_else] =
-                        Instr::Jump(pc_end_else - pc_jump_else as i32);
+                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot);
+                    self.code[pc_jump_else] = Instr::Jump(pc_end_else - pc_jump_else as i32);
                 } else {
                     let pc_end_then = self.code.len() as i32;
                     self.code[pc_jump_then] =
-                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot.unwrap());
+                        Instr::JumpF(pc_end_then - pc_jump_then as i32, cond_slot);
                 }
-                
+
                 self.frame = saved_frame;
                 dest_slot
             }
             Expr::Call(func, args) => {
-
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
                 let saved_frame = self.frame;
 
                 let call_base = self.frame.align_for_call();
                 let sig = func.sig();
-                let ret_ptr_slot = self.frame.alloc(Type::Int(IntType::USize)).unwrap();
-                assert_eq!(call_base,ret_ptr_slot);
+                let ret_ptr_slot = self.frame.alloc(Type::Int(IntType::USize));
+                assert_eq!(call_base, ret_ptr_slot);
 
-                if let Some(dest_slot) = dest_slot {
-                    // the return pointer slot should point to the result slot
-                    self.push_code(Instr::SlotPtr(ret_ptr_slot,dest_slot));
-                } else {
-                    // null the return pointer for safety
-                    self.push_code(Instr::I64_Const(ret_ptr_slot, 0));
-                }
+                // the return pointer slot should point to the result slot
+                self.push_code(Instr::SlotPtr(ret_ptr_slot, dest_slot));
 
-                for (ty,ex) in sig.inputs.iter().zip(args.iter()) {
+                for (ty, ex) in sig.inputs.iter().zip(args.iter()) {
                     let slot = self.frame.alloc(*ty);
+
                     let arg_frame = self.frame;
-                    self.lower_expr(*ex, slot);
+                    self.lower_expr(*ex, Some(slot));
                     assert!(arg_frame == self.frame);
                 }
 
@@ -1009,67 +1061,67 @@ impl<'a> BCompiler<'a> {
             Expr::NewTuple(args) => {
                 let layout = ty.layout();
 
-                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let base_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
                 let saved_frame = self.frame;
 
-                for (arg_id,offset) in args.iter().zip(layout.member_offsets.iter()) {
-                    let member_slot = dest_slot.unwrap() + *offset as u32;
+                for (arg_id, offset) in args.iter().zip(layout.member_offsets.iter()) {
+                    let member_slot = base_slot + *offset as u32;
                     self.lower_expr(*arg_id, Some(member_slot));
                 }
 
                 self.frame = saved_frame;
-                dest_slot
+                base_slot
             }
             Expr::Return(arg) => {
                 let slot = if let Some(arg) = arg {
                     self.lower_expr(*arg, None)
                 } else {
-                    None
+                    SLOT_INVALID
                 };
                 self.insert_return(slot);
 
-                None
+                SLOT_INVALID
             }
             _ => panic!("vm compile {:?}", expr),
         };
         // NOTE: Never results can yield None even with a mandatory result.
-        if mandatory_dest_slot.is_some() && res_slot.is_some() {
-            assert_eq!(mandatory_dest_slot, res_slot);
+        if mandatory_dest_slot.is_some() && res_slot != SLOT_INVALID {
+            assert_eq!(mandatory_dest_slot.unwrap(), res_slot);
         }
 
         res_slot
     }
 
-    fn lower_lazy_logic(&mut self, is_and: bool, lhs: u32, rhs: u32, mandatory_dest_slot: Option<u32>) -> Option<u32> {
-        
-        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Bool));
+    fn lower_lazy_logic(
+        &mut self,
+        is_and: bool,
+        lhs: u32,
+        rhs: u32,
+        mandatory_dest_slot: Option<u32>,
+    ) -> u32 {
+        let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(Type::Bool));
         let saved_frame = self.frame;
-        
-        self.lower_expr(lhs, dest_slot);
+
+        self.lower_expr(lhs, Some(dest_slot));
         self.frame = saved_frame; // reset stack
         let pc_jump = self.code.len();
         self.push_code(Instr::Bad);
 
-        self.lower_expr(rhs, dest_slot);
+        self.lower_expr(rhs, Some(dest_slot));
         self.frame = saved_frame; // reset stack
         let pc_end = self.code.len() as i32;
 
         if is_and {
-            self.code[pc_jump] = Instr::JumpF(pc_end - pc_jump as i32, dest_slot.unwrap());
+            self.code[pc_jump] = Instr::JumpF(pc_end - pc_jump as i32, dest_slot);
         } else {
-            self.code[pc_jump] = Instr::JumpT(pc_end - pc_jump as i32, dest_slot.unwrap());
+            self.code[pc_jump] = Instr::JumpT(pc_end - pc_jump as i32, dest_slot);
         }
 
         dest_slot
     }
 
-    fn lower_block(
-        &mut self,
-        block: &Block,
-        ty: Type,
-        mandatory_dest_slot: Option<u32>,
-    ) -> Option<u32> {
-        let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(ty));
+    fn lower_block(&mut self, block: &Block, ty: Type, mandatory_dest_slot: Option<u32>) -> u32 {
+        let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(ty));
         let saved_frame = self.frame;
         let temp_len = self.temp_slots.len();
 
@@ -1078,10 +1130,11 @@ impl<'a> BCompiler<'a> {
         }
 
         if let Some(expr_id) = &block.result {
-            self.lower_expr(*expr_id, dest_slot);
+            self.lower_expr(*expr_id, Some(dest_slot));
         }
         self.frame = saved_frame;
-        self.temp_slots.resize(temp_len, (0xFFFFFFFF,None));
+        self.temp_slots
+            .resize(temp_len, (SLOT_INVALID, SLOT_INVALID));
         dest_slot
     }
 
@@ -1101,7 +1154,7 @@ impl<'a> BCompiler<'a> {
                 if size == 2 {
                     self.push_code(Instr::MovSS2(dest, src));
                 } else {
-                    assert_eq!(size % 2,0);
+                    assert_eq!(size % 2, 0);
                     self.push_code(Instr::MovSS2N(dest, src, size as u32 / 2));
                 }
             }
@@ -1109,7 +1162,7 @@ impl<'a> BCompiler<'a> {
                 if size == 4 {
                     self.push_code(Instr::MovSS4(dest, src));
                 } else {
-                    assert_eq!(size % 4,0);
+                    assert_eq!(size % 4, 0);
                     self.push_code(Instr::MovSS4N(dest, src, size as u32 / 4));
                 }
             }
@@ -1117,7 +1170,7 @@ impl<'a> BCompiler<'a> {
                 if size == 8 {
                     self.push_code(Instr::MovSS8(dest, src));
                 } else {
-                    assert_eq!(size % 8,0);
+                    assert_eq!(size % 8, 0);
                     self.push_code(Instr::MovSS8N(dest, src, size as u32 / 8));
                 }
             }
@@ -1125,17 +1178,20 @@ impl<'a> BCompiler<'a> {
                 if size == 16 {
                     self.push_code(Instr::MovSS16(dest, src));
                 } else {
-                    assert_eq!(size % 16,0);
+                    assert_eq!(size % 16, 0);
                     self.push_code(Instr::MovSS16N(dest, src, size as u32 / 16));
                 }
             }
-            _ => panic!("no move ss {} {}",size,align)
+            _ => panic!("no move ss {} {}", size, align),
         }
     }
 
     fn insert_move_ps(&mut self, dest: u32, src: u32, ty: Type) {
-        // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
+        if size == 0 {
+            return;
+        }
+
         let align = ty.byte_align();
 
         if size == 1 && align == 1 {
@@ -1149,7 +1205,7 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovPS16(dest, src));
         } else {
-            panic!("no move ps {} {}",size,align);
+            panic!("no move ps {} {}", size, align);
         }
     }
 
@@ -1169,15 +1225,13 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovSP16(dest, src));
         } else {
-            panic!("no move sp {} {}",size,align);
+            panic!("no move sp {} {}", size, align);
         }
     }
 
-    fn insert_return(&mut self, res: Option<u32>) {
-        if let Some(res) = res {
-            let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
-            self.insert_move_ps(0, res, ty);
-        }
+    fn insert_return(&mut self, res: u32) {
+        let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
+        self.insert_move_ps(0, res, ty);
         self.push_code(Instr::Return);
     }
 

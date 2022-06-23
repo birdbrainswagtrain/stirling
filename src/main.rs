@@ -29,7 +29,7 @@ const USE_VM_NATIVE: bool = false;
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about)]
-struct CmdArgs{
+struct CmdArgs {
     file_name: String,
 
     /// Used to run tests. Pass a directory as file_name.
@@ -41,8 +41,8 @@ struct CmdArgs{
     profile: bool,
 
     /// Dumps debug information.
-    #[clap(long,short)]
-    verbose: bool
+    #[clap(long, short)]
+    verbose: bool,
 }
 
 fn main() {
@@ -51,7 +51,7 @@ fn main() {
     let args = CmdArgs::parse();
 
     VERBOSE.set(args.verbose).unwrap();
-    
+
     if args.test {
         test(&args.file_name);
     }
@@ -90,7 +90,7 @@ fn main() {
 fn check_abi() {
     assert_eq!(std::mem::size_of::<usize>(), PTR_WIDTH);
     assert_eq!(offset_of!(Function, c_fn), 0);
-    assert_eq!(std::mem::size_of::<crate::vm::Instr>(),16);
+    assert_eq!(std::mem::size_of::<crate::vm::Instr>(), 16);
 }
 
 fn gather_tests(dir_name: &str, files: &mut Vec<PathBuf>) {
@@ -106,7 +106,7 @@ fn gather_tests(dir_name: &str, files: &mut Vec<PathBuf>) {
                     if file_ty.is_dir() {
                         let sub_dir = dir_path.join(file_name);
                         if let Some(sub_dir) = sub_dir.to_str() {
-                            gather_tests(sub_dir,files);
+                            gather_tests(sub_dir, files);
                         }
                     } else if file_ty.is_file() {
                         if file_name.ends_with(".rs") {
@@ -124,35 +124,37 @@ fn test(dir_name: &str) -> ! {
     use colored::Colorize;
 
     let mut test_files = Vec::new();
-    gather_tests(dir_name,&mut test_files);
+    gather_tests(dir_name, &mut test_files);
     test_files.sort();
-    
+
     let bin_name = Path::new("/tmp/stirling_test_1");
     for file in test_files {
-        let res = run_test(&file,bin_name);
+        let res = run_test(&file, bin_name);
         let res_str = if let Err(msg) = res {
-            format!("FAIL: {}",msg).red()
+            format!("FAIL: {}", msg).red()
         } else {
             "OKAY".green()
         };
-        println!("{:35} {}",file.to_str().unwrap(),res_str);
+        println!("{:35} {}", file.to_str().unwrap(), res_str);
     }
 
     profile_log();
-    
+
     std::process::exit(0)
 }
 
-fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
+fn run_test(file_name: &Path, bin_name: &Path) -> Result<(), String> {
     use std::process::Command;
     // Rust compile
-    profile("rustc compile",||{
+    profile("rustc compile", || {
         let fail = || Err(String::from("rustc compile failed"));
 
         let cmd_res = Command::new("rustc")
             .arg(file_name)
-            .arg("-o").arg(bin_name)
-            .arg("-C").arg("overflow-checks=off")
+            .arg("-o")
+            .arg(bin_name)
+            .arg("-C")
+            .arg("overflow-checks=off")
             .output();
 
         if let Ok(cmd_res) = cmd_res {
@@ -166,7 +168,7 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
         }
     })?;
 
-    let rustc_out = profile("rustc exec",||{
+    let rustc_out = profile("rustc exec", || {
         let fail = || Err(String::from("rustc exec failed"));
 
         let cmd_res = Command::new(bin_name).output();
@@ -181,14 +183,12 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(),String> {
         }
     })?;
 
-    let stirling_out = profile("stirling",||{
+    let stirling_out = profile("stirling", || {
         let fail = || Err(String::from("stirling failed"));
 
         let program = std::env::current_exe().expect("failed to get stirling path");
 
-        let cmd_res = Command::new(program)
-            .arg(file_name)
-            .output();
+        let cmd_res = Command::new(program).arg(file_name).output();
 
         if let Ok(cmd_res) = cmd_res {
             if !cmd_res.status.success() {
