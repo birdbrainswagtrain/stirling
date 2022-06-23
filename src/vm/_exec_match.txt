@@ -1159,45 +1159,45 @@ match instr {
         let res = x;
 
         let ptr: *mut u8 = read_stack(stack, *out);
-        //panic!("wew {:?} {:?}",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
     }
     Instr::MovPS2(out, src) => {
         let x: u16 = read_stack(stack, *src);
         let res = x;
 
         let ptr: *mut u16 = read_stack(stack, *out);
-        //panic!("wew {:?} {:?}",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
     }
     Instr::MovPS4(out, src) => {
         let x: u32 = read_stack(stack, *src);
         let res = x;
 
         let ptr: *mut u32 = read_stack(stack, *out);
-        //panic!("wew {:?} {:?}",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
     }
     Instr::MovPS8(out, src) => {
         let x: u64 = read_stack(stack, *src);
         let res = x;
 
         let ptr: *mut u64 = read_stack(stack, *out);
-        //panic!("wew {:?} {:?}",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
     }
     Instr::MovPS16(out, src) => {
         let x: u128 = read_stack(stack, *src);
         let res = x;
 
         let ptr: *mut u128 = read_stack(stack, *out);
-        //panic!("wew {:?} {:?}",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
+    }
+    Instr::MovSS4N(dst, src, n) => {
+        let src_ptr = stack.add(*src as usize) as *mut u32;
+        let dst_ptr = stack.add(*dst as usize) as *mut u32;
+        for i in 0..(*n as usize) {
+            let s = src_ptr.add(i);
+            let d = dst_ptr.add(i);
+
+            *d = *s;
+        }
     }
     Instr::JumpF(offset, cond) => {
         let x: bool = read_stack(stack, *cond);
@@ -1220,6 +1220,11 @@ match instr {
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::SlotPtr(out,arg) => {
         let res = stack.add(*arg as usize) as usize;
+        write_stack(stack, *out, res);
+    }
+    Instr::OffsetPtr(out,arg,offset) => {
+        let val: u64 = read_stack(stack, *arg);
+        let res = val + *offset as u64;
         write_stack(stack, *out, res);
     }
     Instr::Return => break,

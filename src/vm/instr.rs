@@ -235,6 +235,24 @@ pub enum Instr {
     MovSP8(u32,u32),
     MovSP16(u32,u32),
 
+    MovSS1N(u32,u32,u32),
+    MovSS2N(u32,u32,u32),
+    MovSS4N(u32,u32,u32),
+    MovSS8N(u32,u32,u32),
+    MovSS16N(u32,u32,u32),
+
+    MovPS1N(u32,u32,u32),
+    MovPS2N(u32,u32,u32),
+    MovPS4N(u32,u32,u32),
+    MovPS8N(u32,u32,u32),
+    MovPS16N(u32,u32,u32),
+
+    MovSP1N(u32,u32,u32),
+    MovSP2N(u32,u32,u32),
+    MovSP4N(u32,u32,u32),
+    MovSP8N(u32,u32,u32),
+    MovSP16N(u32,u32,u32),
+
     Jump(i32),
     JumpF(i32, u32),
     JumpT(i32, u32),
@@ -242,6 +260,8 @@ pub enum Instr {
     Call(u32, &'static Function),
 
     SlotPtr(u32,u32),
+    OffsetPtr(u32,u32,u32),
+
     Return,
     Bad,
 

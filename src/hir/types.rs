@@ -1,6 +1,5 @@
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 
-use cranelift::prelude::types;
 use std::{collections::HashSet, sync::RwLock};
 
 use crate::PTR_WIDTH;
@@ -50,7 +49,7 @@ impl Signature {
 pub enum CompoundType {
     Ref(Type, bool),
     Ptr(Type, bool),
-    Tuple(Vec<Type>),
+    Tuple(Vec<Type>,InvisibleMetadata<OnceCell<StructLayout>>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -171,8 +170,14 @@ impl Type {
                     *self = Type::from_compound(CompoundType::Ptr(new_inner, *is_mut));
                 }
             }
-            Type::Compound(CompoundType::Tuple(fields)) => {
-                panic!("tuple");
+            Type::Compound(CompoundType::Tuple(fields,_)) => {
+                if self.is_unknown() {
+                    let mut fields = fields.clone();
+                    for field in fields.iter_mut() {
+                        field.check_known();
+                    }
+                    *self = Type::from_compound(CompoundType::Tuple(fields,Default::default()));
+                }
             }
         }
         *self
@@ -186,7 +191,7 @@ impl Type {
             Type::Unknown | Type::IntUnknown | Type::FloatUnknown => true,
             Type::Compound(cpx) => match cpx {
                 CompoundType::Ref(t, _) | CompoundType::Ptr(t, _) => t.is_unknown(),
-                CompoundType::Tuple(fields) => fields.iter().any(|x| x.is_unknown()),
+                CompoundType::Tuple(fields,_) => fields.iter().any(|x| x.is_unknown()),
             },
         }
     }
@@ -282,40 +287,49 @@ impl Type {
             | Type::Compound(CompoundType::Ptr(..))
             | Type::Compound(CompoundType::Ref(..)) => PTR_WIDTH,
 
+            Type::Compound(CompoundType::Tuple(members,layout)) => {
+                layout.as_ref().get_or_init(|| StructLayout::new(members)).size
+            }
+
             _ => panic!("cannot size {:?}", self),
         }
     }
 
     pub fn byte_align(&self) -> usize {
-        self.byte_size()
+        match self {
+            Type::Int(IntType::I128) | Type::Int(IntType::U128) => 16,
+            Type::Int(IntType::I64) | Type::Int(IntType::U64) => 8,
+            Type::Int(IntType::I32) | Type::Int(IntType::U32) => 4,
+            Type::Int(IntType::I16) | Type::Int(IntType::U16) => 2,
+            Type::Int(IntType::I8) | Type::Int(IntType::U8) => 1,
+
+            Type::Float(FloatType::F64) => 8,
+            Type::Float(FloatType::F32) => 4,
+
+            Type::Char => 4,
+            Type::Bool => 1,
+            Type::Void => 0,
+            Type::Never => 0,
+
+            Type::Int(IntType::ISize)
+            | Type::Int(IntType::USize)
+            | Type::Compound(CompoundType::Ptr(..))
+            | Type::Compound(CompoundType::Ref(..)) => PTR_WIDTH,
+
+            Type::Compound(CompoundType::Tuple(members,layout)) => {
+                layout.as_ref().get_or_init(|| StructLayout::new(members)).align
+            }
+
+            _ => panic!("cannot align {:?}", self),
+        }
     }
 
-    pub fn lower(&self) -> CType {
+    pub fn layout(&self) -> &StructLayout {
         match self {
-            // Ints
-            Type::Int(IntType::I128) | Type::Int(IntType::U128) => {
-                panic!("128 bit integers are broken")
+            Type::Compound(CompoundType::Tuple(members,layout)) => {
+                layout.as_ref().get_or_init(|| StructLayout::new(members))
             }
-            Type::Int(IntType::I64) | Type::Int(IntType::U64) => CType::Scalar(types::I64),
-            Type::Int(IntType::I32) | Type::Int(IntType::U32) => CType::Scalar(types::I32),
-            Type::Int(IntType::I16) | Type::Int(IntType::U16) => CType::Scalar(types::I16),
-            Type::Int(IntType::I8) | Type::Int(IntType::U8) => CType::Scalar(types::I8),
-            Type::Int(IntType::ISize) | Type::Int(IntType::USize) => CType::Scalar(ptr_ty()),
-
-            // Floats
-            Type::Float(FloatType::F64) => CType::Scalar(types::F64),
-            Type::Float(FloatType::F32) => CType::Scalar(types::F32),
-
-            Type::Bool => CType::Scalar(types::B1),
-            Type::Char => CType::Scalar(types::I32),
-            Type::Void => CType::None,
-            Type::Never => CType::Never,
-
-            // Refs and Pointers
-            Type::Compound(CompoundType::Ref(..)) => CType::Scalar(ptr_ty()),
-            Type::Compound(CompoundType::Ptr(..)) => CType::Scalar(ptr_ty()),
-
-            _ => panic!("can't lower type {:?}", self),
+            _ => panic!("can't get layout for {:?}",self)
         }
     }
 
@@ -350,6 +364,24 @@ impl Type {
                         Type::from_compound(CompoundType::Ref(*t1, m))
                     }
                 }
+
+                (
+                    Type::Compound(CompoundType::Tuple(t1, m1)),
+                    Type::Compound(CompoundType::Tuple(t2, m2)),
+                ) => {
+                    assert_eq!(t1.len(),t2.len());
+
+                    let merged: Vec<Type> = t1.iter().zip(t2.iter()).map(|(t1,t2)| {
+                        if t1 == t2 {
+                            *t1
+                        } else {
+                            t1.unify(*t2)
+                        }
+                    }).collect();
+
+                    Type::from_compound(CompoundType::Tuple(merged, Default::default()))
+                }
+
                 _ => panic!("type error, can not unify types {:?} and {:?}", self, other),
             }
         }
@@ -365,26 +397,99 @@ impl Type {
             Type::Compound(res)
         }
     }
-}
 
-#[derive(Debug)]
-pub enum CType {
-    None,
-    Never,
-    Scalar(cranelift::prelude::Type),
-}
+    pub fn get_tuple_member(self, index: u32) -> Option<Type> {
+        match self {
+            Type::Compound(CompoundType::Ref(child,_)) => child.get_tuple_member(index),
+            Type::Compound(CompoundType::Tuple(members,_)) => Some(members[index as usize]),
+            _ => None
+        }
+    }
 
-impl CType {
-    pub fn unwrap_scalar(&self) -> cranelift::prelude::Type {
-        if let CType::Scalar(val) = self {
-            *val
-        } else {
-            panic!("failed to unwrap scalar type");
+    pub fn set_tuple_member(self, index: u32, ty: Type) -> Option<Type> {
+        match self {
+            Type::Compound(CompoundType::Ref(child,is_mut)) => {
+                let child = child.set_tuple_member(index,ty)?;
+                Some(Type::from_compound(CompoundType::Ref(child,*is_mut)))
+            }
+            Type::Compound(CompoundType::Tuple(members,_)) => {
+                let mut new_members = members.clone();
+                new_members[index as usize] = ty;
+                Some(Type::from_compound(CompoundType::Tuple(new_members,Default::default())))
+            },
+            _ => None
+        }
+    }
+
+    pub fn get_referenced_r(self) -> Type {
+        match self {
+            Type::Compound(CompoundType::Ref(child,is_mut)) => {
+                child.get_referenced_r()
+            }
+            _ => self
         }
     }
 }
 
-pub fn ptr_ty() -> cranelift::prelude::Type {
-    assert!(PTR_WIDTH == 8);
-    types::I64
+
+/// HACK: Used to attach metadata (such as layout) to a type without making it affect hashing or equality.
+#[derive(Debug,Default)]
+pub struct InvisibleMetadata<T>(T);
+
+impl<T> AsRef<T> for InvisibleMetadata<T> {
+    fn as_ref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> Eq for InvisibleMetadata<T> {}
+
+impl<T> PartialEq for InvisibleMetadata<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T> std::hash::Hash for InvisibleMetadata<T> {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {
+        // no-op
+    }
+}
+
+#[derive(Debug)]
+pub struct StructLayout{
+    pub size: usize,
+    pub align: usize,
+    pub member_offsets: Vec<u32>,
+}
+
+impl StructLayout{
+    fn new(members: &Vec<Type>) -> Self {
+        let mut layout = Self{
+            size: 0,
+            align: 1,
+            member_offsets: vec!()
+        };
+
+        for member in members {
+            let m_size = member.byte_size();
+            let m_align = member.byte_align();
+
+            layout.align = layout.align.max(m_align);
+
+            while layout.size % m_align != 0 {
+                layout.size += 1;
+            }
+
+            layout.member_offsets.push(layout.size as u32);
+
+            layout.size += m_size;
+        }
+
+        while layout.size % layout.align != 0 {
+            layout.size += 1;
+        }
+
+        layout
+    }
 }

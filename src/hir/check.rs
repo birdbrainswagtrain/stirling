@@ -363,6 +363,56 @@ impl FuncHIR {
 
                 self.check_function(index, &args, sig)
             }
+            Expr::NewTuple(ref args) => {
+                //let mut tuple_ty = info.ty;
+                
+                // force tuple -- todo only init the type if not already a tuple
+                //tuple_ty = tuple_ty.unify( Type::from_compound(CompoundType::Tuple(vec!(Type::Unknown;args.len()))) );
+
+                let mut mutated = false;
+
+                let mut member_tys = if let Type::Compound(CompoundType::Tuple(member_tys,_)) = info.ty {
+                    member_tys.clone()
+                } else {
+                    vec!(Type::Unknown;args.len())
+                };
+
+                assert_eq!(member_tys.len(),args.len());
+
+                // bad clone :(
+                for (ty,arg_i) in member_tys.iter_mut().zip(args.clone().iter()) {
+                    mutated |= self.update_expr_type(*arg_i, *ty);
+                    *ty = self.exprs[*arg_i as usize].ty;
+                }
+
+                let tuple_ty = Type::from_compound(CompoundType::Tuple(member_tys,Default::default()));
+                mutated |= self.update_expr_type(index, tuple_ty);
+
+                //println!("=> {:?}",member_tys);
+
+                CheckResult {
+                    mutated,
+                    resolved: !tuple_ty.is_unknown()
+                }
+            }
+            Expr::IndexTuple(arg, member_n) => {
+
+                let old_tuple_ty = self.exprs[arg as usize].ty;
+                let member_ty = old_tuple_ty.get_tuple_member(member_n).unwrap();
+
+                let mut mutated = self.update_expr_type(index, member_ty);
+                if member_ty != self.exprs[index as usize].ty {
+                    let new_member_ty = self.exprs[index as usize].ty;
+                    let new_tuple_ty = old_tuple_ty.set_tuple_member(member_n,new_member_ty).unwrap();
+
+                    mutated |= self.update_expr_type(arg, new_tuple_ty);
+                }
+
+                CheckResult {
+                    mutated,
+                    resolved: !self.exprs[index as usize].ty.is_unknown()
+                }
+            }
             _ => panic!("todo check {:?}", info.expr),
         }
     }
@@ -458,7 +508,16 @@ impl FuncHIR {
                 let sig = &entry.unwrap().1;
                 Some(sig.output == Type::Never)
             }
+            Expr::NewTuple(args) => {
+                for arg in args {
+                    if self.get_expr_is_never(*arg)? {
+                        return Some(true);
+                    }
+                }
+                Some(false)
+            }
 
+            Expr::IndexTuple(arg, _) |
             Expr::StmtTmp(arg, _) |
             Expr::UnOp(arg, _) |
             Expr::UnOpPrimitive(arg, _) |

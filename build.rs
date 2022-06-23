@@ -23,9 +23,23 @@ fn write_pointer(instr: &str, ty: &str, op: &str, source: &mut String) {
         let res = {op};
 
         let ptr: *mut {ty} = read_stack(stack, *out);
-        //panic!(\"wew {{:?}} {{:?}}\",stack,ptr);
         *ptr = res;
-        //write_stack(stack, *out, res);
+    }}"
+    ));
+}
+
+fn write_bulk_move_ss(instr: &str, ty: &str, source: &mut String) {
+    source.push_str(&format!(
+        "
+    Instr::{instr}(dst, src, n) => {{
+        let src_ptr = stack.add(*src as usize) as *mut {ty};
+        let dst_ptr = stack.add(*dst as usize) as *mut {ty};
+        for i in 0..(*n as usize) {{
+            let s = src_ptr.add(i);
+            let d = dst_ptr.add(i);
+
+            *d = *s;
+        }}
     }}"
     ));
 }
@@ -243,6 +257,8 @@ fn write_exec_match() {
     write_pointer("MovPS8", "u64", "x", &mut source);
     write_pointer("MovPS16", "u128", "x", &mut source);
 
+    write_bulk_move_ss("MovSS4N","u32",&mut source);
+
     source.push_str(
         r#"
     Instr::JumpF(offset, cond) => {
@@ -266,6 +282,11 @@ fn write_exec_match() {
     Instr::Bad => panic!("encountered bad instruction"),
     Instr::SlotPtr(out,arg) => {
         let res = stack.add(*arg as usize) as usize;
+        write_stack(stack, *out, res);
+    }
+    Instr::OffsetPtr(out,arg,offset) => {
+        let val: u64 = read_stack(stack, *arg);
+        let res = val + *offset as u64;
         write_stack(stack, *out, res);
     }
     Instr::Return => break,

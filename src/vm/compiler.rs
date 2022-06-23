@@ -2,7 +2,7 @@ use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{IntType, Type, FloatType},
+        types::{IntType, Type, FloatType, CompoundType},
     },
     profiler::profile, is_verbose,
 };
@@ -26,7 +26,7 @@ struct LoopResult {
     slot: Option<u32>
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 struct FrameAllocator(u32);
 
 impl FrameAllocator {
@@ -438,11 +438,50 @@ impl<'a> BCompiler<'a> {
         if let Expr::Var(id) = expr {
             let res = self.var_map[*id as usize];
             Some(res)
+        } else if let Expr::IndexTuple(arg, member_n) = expr {
+            let arg_ty = self.input_fn.exprs[*arg as usize].ty;
+            if arg_ty.is_ref() {
+                None
+            } else if let Some(base) = self.try_get_place_slot(*arg) {
+                let layout = arg_ty.layout();
+                let offset = layout.member_offsets[*member_n as usize];
+                let member_slot = base.unwrap() + offset as u32;
+
+                Some(Some(member_slot))
+            } else {
+                None
+            }
         } else if let Some(res) = self.try_get_temp_slot(expr_id) {
             self.lower_expr(expr_id, res);
             Some(res)
         } else {
             None
+        }
+    }
+
+    // gets the address of something behind an arbitrary number of references
+    fn get_struct_addr(&mut self, expr_id: u32) -> u32 {
+        let ty = &self.input_fn.exprs[expr_id as usize].ty;
+        match ty {
+            Type::Compound(CompoundType::Ref(wrapped_ty,_)) => {
+                let slot = self.lower_expr(expr_id, None).unwrap();
+                if let Type::Compound(CompoundType::Ref(wrapped_ty,_)) = wrapped_ty {       
+                    let tmp_slot = self.frame.alloc(Type::Int(IntType::U64)).unwrap();
+
+                    self.push_code(Instr::MovSP8(tmp_slot, slot));
+
+                    let mut wrapped_ty = *wrapped_ty;
+                    while let Type::Compound(CompoundType::Ref(wt,_)) = wrapped_ty {
+                        wrapped_ty = *wt;
+                        self.push_code(Instr::MovSP8(tmp_slot, tmp_slot));
+                    }
+
+                    tmp_slot
+                } else {
+                    slot
+                }
+            }
+            _ => self.get_place_addr(expr_id,None)
         }
     }
 
@@ -460,6 +499,16 @@ impl<'a> BCompiler<'a> {
             let expr = &self.input_fn.exprs[expr_id as usize].expr;
             if let Expr::DeRef(arg) = expr {
                 self.lower_expr(*arg, mandatory_dest_slot).unwrap()
+            } else if let Expr::IndexTuple(arg, member_n) = expr {
+                let arg_ty = &self.input_fn.exprs[*arg as usize].ty;
+                let tuple_ty = arg_ty.get_referenced_r();
+                let layout = tuple_ty.layout();
+                let offset = layout.member_offsets[*member_n as usize];
+
+                let base_slot = self.get_struct_addr(*arg);
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(Type::Int(IntType::U64))).unwrap();
+                self.push_code(Instr::OffsetPtr(dest_slot, base_slot, offset));
+                dest_slot
             } else {
                 panic!("todo ref? {:?}",expr)
             }
@@ -481,7 +530,7 @@ impl<'a> BCompiler<'a> {
         let saved_frame = self.frame;
 
         let res_slot = match expr {
-            Expr::Var(id) => {
+            /*Expr::Var(id) => {
                 let src = self.var_map[*id as usize];
                 if mandatory_dest_slot.is_none() {
                     src
@@ -489,6 +538,36 @@ impl<'a> BCompiler<'a> {
                     self.insert_move_ss(mandatory_dest_slot.unwrap(), src.unwrap(), *ty);
                     mandatory_dest_slot
                 }
+            }*/
+            Expr::Var(..) | Expr::IndexTuple(..) => {
+                if let Some(slot) = self.try_get_place_slot(expr_id) {
+                    if mandatory_dest_slot.is_none() {
+                        slot
+                    } else {
+                        self.insert_move_ss(mandatory_dest_slot.unwrap(), slot.unwrap(), *ty);
+                        mandatory_dest_slot
+                    }
+                } else {
+                    let res_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty)).unwrap();
+                    let ptr_slot = self.get_place_addr(expr_id, None);
+                    self.insert_move_sp(res_slot, ptr_slot, *ty);
+                    Some(res_slot)
+                }
+                /*let arg_ty = self.input_fn.exprs[*arg as usize].ty;
+                let layout = arg_ty.layout();
+                let offset = layout.member_offsets[*member_n as usize];
+
+                if let Some(base) = self.try_get_place_slot(*arg) {
+                    let member_slot = base.unwrap() + offset as u32;
+                    if mandatory_dest_slot.is_none() {
+                        Some(member_slot)
+                    } else {
+                        panic!("aaaaah");
+                    }
+                    //self.lower_expr(*src, Some(member_slot));
+                } else {
+                    panic!("tuple ptr");
+                }*/
             }
             Expr::DeclVar(id) => {
                 assert!(mandatory_dest_slot.is_none());
@@ -917,10 +996,26 @@ impl<'a> BCompiler<'a> {
 
                 for (ty,ex) in sig.inputs.iter().zip(args.iter()) {
                     let slot = self.frame.alloc(*ty);
+                    let arg_frame = self.frame;
                     self.lower_expr(*ex, slot);
+                    assert!(arg_frame == self.frame);
                 }
 
                 self.push_code(Instr::Call(call_base, func));
+
+                self.frame = saved_frame;
+                dest_slot
+            }
+            Expr::NewTuple(args) => {
+                let layout = ty.layout();
+
+                let dest_slot = mandatory_dest_slot.or_else(|| self.frame.alloc(*ty));
+                let saved_frame = self.frame;
+
+                for (arg_id,offset) in args.iter().zip(layout.member_offsets.iter()) {
+                    let member_slot = dest_slot.unwrap() + *offset as u32;
+                    self.lower_expr(*arg_id, Some(member_slot));
+                }
 
                 self.frame = saved_frame;
                 dest_slot
@@ -991,22 +1086,50 @@ impl<'a> BCompiler<'a> {
     }
 
     fn insert_move_ss(&mut self, dest: u32, src: u32, ty: Type) {
-        // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
         let align = ty.byte_align();
 
-        if size == 1 && align == 1 {
-            self.push_code(Instr::MovSS1(dest, src));
-        } else if size == 2 && align == 2 {
-            self.push_code(Instr::MovSS2(dest, src));
-        } else if size == 4 && align == 4 {
-            self.push_code(Instr::MovSS4(dest, src));
-        } else if size == 8 && align == 8 {
-            self.push_code(Instr::MovSS8(dest, src));
-        } else if size == 16 && align == 16 {
-            self.push_code(Instr::MovSS16(dest, src));
-        } else {
-            panic!("no move {} {}",size,align);
+        match align {
+            1 => {
+                if size == 1 {
+                    self.push_code(Instr::MovSS1(dest, src));
+                } else {
+                    self.push_code(Instr::MovSS1N(dest, src, size as u32));
+                }
+            }
+            2 => {
+                if size == 2 {
+                    self.push_code(Instr::MovSS2(dest, src));
+                } else {
+                    assert_eq!(size % 2,0);
+                    self.push_code(Instr::MovSS2N(dest, src, size as u32 / 2));
+                }
+            }
+            4 => {
+                if size == 4 {
+                    self.push_code(Instr::MovSS4(dest, src));
+                } else {
+                    assert_eq!(size % 4,0);
+                    self.push_code(Instr::MovSS4N(dest, src, size as u32 / 4));
+                }
+            }
+            8 => {
+                if size == 8 {
+                    self.push_code(Instr::MovSS8(dest, src));
+                } else {
+                    assert_eq!(size % 8,0);
+                    self.push_code(Instr::MovSS8N(dest, src, size as u32 / 8));
+                }
+            }
+            16 => {
+                if size == 16 {
+                    self.push_code(Instr::MovSS16(dest, src));
+                } else {
+                    assert_eq!(size % 16,0);
+                    self.push_code(Instr::MovSS16N(dest, src, size as u32 / 16));
+                }
+            }
+            _ => panic!("no move ss {} {}",size,align)
         }
     }
 
@@ -1026,7 +1149,7 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovPS16(dest, src));
         } else {
-            panic!("no move {} {}",size,align);
+            panic!("no move ps {} {}",size,align);
         }
     }
 
@@ -1046,7 +1169,7 @@ impl<'a> BCompiler<'a> {
         } else if size == 16 && align == 16 {
             self.push_code(Instr::MovSP16(dest, src));
         } else {
-            panic!("no move {} {}",size,align);
+            panic!("no move sp {} {}",size,align);
         }
     }
 
