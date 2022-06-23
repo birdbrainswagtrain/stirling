@@ -1140,6 +1140,10 @@ impl<'a> BCompiler<'a> {
 
     fn insert_move_ss(&mut self, dest: u32, src: u32, ty: Type) {
         let size = ty.byte_size();
+        if size == 0 {
+            return;
+        }
+
         let align = ty.byte_align();
 
         match align {
@@ -1212,6 +1216,10 @@ impl<'a> BCompiler<'a> {
     fn insert_move_sp(&mut self, dest: u32, src: u32, ty: Type) {
         // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
+        if size == 0 {
+            return;
+        }
+
         let align = ty.byte_align();
 
         if size == 1 && align == 1 {

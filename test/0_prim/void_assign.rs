@@ -13,4 +13,10 @@ fn main() {
 
     let r3 = if true { x <<= 1 } else { () };
     _builtin::print_int(x);
+
+    let a = ();
+    let b = a;
+    let c = *&();
+
+    *(&mut ()) = ();
 }
