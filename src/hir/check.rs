@@ -11,13 +11,6 @@ struct CheckResult {
 }
 
 impl CheckResult {
-    fn combine(self, other: Self) -> Self {
-        CheckResult {
-            mutated: self.mutated || other.mutated,
-            resolved: self.resolved && other.resolved,
-        }
-    }
-
     fn set_mutated(&mut self) -> Self {
         self.mutated = true;
         *self
@@ -413,7 +406,7 @@ impl FuncHIR {
                     resolved: !self.exprs[index as usize].ty.is_unknown(),
                 }
             }
-            _ => panic!("todo check {:?}", info.expr),
+            //_ => panic!("todo check {:?}", info.expr),
         }
     }
 

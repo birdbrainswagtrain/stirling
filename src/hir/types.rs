@@ -373,8 +373,8 @@ impl Type {
                 }
 
                 (
-                    Type::Compound(CompoundType::Tuple(t1, m1)),
-                    Type::Compound(CompoundType::Tuple(t2, m2)),
+                    Type::Compound(CompoundType::Tuple(t1, _)),
+                    Type::Compound(CompoundType::Tuple(t2, _)),
                 ) => {
                     assert_eq!(t1.len(), t2.len());
 
@@ -431,7 +431,7 @@ impl Type {
 
     pub fn get_referenced_r(self) -> Type {
         match self {
-            Type::Compound(CompoundType::Ref(child, is_mut)) => child.get_referenced_r(),
+            Type::Compound(CompoundType::Ref(child, _)) => child.get_referenced_r(),
             _ => self,
         }
     }
