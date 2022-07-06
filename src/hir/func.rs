@@ -1,9 +1,10 @@
 use crate::profiler::profile;
 
+use super::infer::{FuncTypes, TypeKind, GlobalType};
 use super::item::{Function, Item, ItemName, Scope};
 use super::types::{Signature, Type};
 
-use std::cell::RefCell;
+use std::cell::{RefCell, Cell};
 
 pub struct FuncHIR {
     pub root_expr: usize,
@@ -16,16 +17,14 @@ pub struct FuncHIR {
 #[derive(Debug)]
 pub struct ExprInfo {
     pub expr: Expr,
-    pub ty: Type,
-    pub is_resolved: bool,
+    pub ty: GlobalType
 }
 
 impl ExprInfo {
-    pub fn new(expr: Expr, ty: Type) -> ExprInfo {
+    pub fn new(expr: Expr) -> ExprInfo {
         ExprInfo {
             expr,
-            ty,
-            is_resolved: false,
+            ty: GlobalType::simple(TypeKind::Unknown)
         }
     }
 }
@@ -58,7 +57,9 @@ impl FuncHIR {
             body.add_args(&mut code, &syn_fn.sig, ty_sig);
             body.add_from_syn(&mut code, &syn_fn.block);
 
-            let root = code.push_expr(Expr::Block(Box::new(body)), ty_sig.output);
+            // todo root? ty_sig.output
+
+            let root = code.push_expr(Expr::Block(Box::new(body)));
             code.root_expr = root as usize;
         });
 
@@ -69,14 +70,20 @@ impl FuncHIR {
             panic!("bad temporary detected");
         }
 
-        profile("type check", || code.check());
+        let mut types = FuncTypes::new(&mut code);
+        types.solve();
+
+        panic!("infer");
+        
+        //profile("type infer", || code.infer_types());
+        //panic!("todo type check");
 
         code
     }
 
-    fn push_expr(&mut self, expr: Expr, ty: Type) -> u32 {
+    fn push_expr(&mut self, expr: Expr) -> u32 {
         let id = self.exprs.len() as u32;
-        self.exprs.push(ExprInfo::new(expr, ty));
+        self.exprs.push(ExprInfo::new(expr));
         id
     }
 
@@ -174,7 +181,7 @@ impl Block {
 
     pub fn add_args(&mut self, code: &mut FuncHIR, syn_sig: &syn::Signature, sig: &Signature) {
         for (i, (syn_arg, ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
-            let var_id = code.push_expr(Expr::Var(i as u32), *ty);
+            let var_id = code.push_expr(Expr::Arg(i as u32, *ty));
             code.vars.push(var_id);
 
             let name = match syn_arg {
@@ -190,7 +197,7 @@ impl Block {
     fn add_stmt(&mut self, id: u32, code: &mut FuncHIR) {
         if code.nested_temporaries.len() > 0 {
             let tmp_list = std::mem::take(&mut code.nested_temporaries);
-            let new_id = code.push_expr(Expr::StmtTmp(id, tmp_list), Type::Void);
+            let new_id = code.push_expr(Expr::StmtTmp(id, tmp_list));
             self.stmts.push(new_id);
         } else {
             self.stmts.push(id);
@@ -218,7 +225,7 @@ impl Block {
                 syn::Stmt::Local(syn_local) => {
                     let (name, ty) = pat_to_name_and_ty(&syn_local.pat, &self.scope.borrow());
 
-                    let var_id = code.push_expr(Expr::Var(code.vars.len() as u32), ty);
+                    let var_id = code.push_expr(Expr::Var(code.vars.len() as u32, ty));
                     code.vars.push(var_id);
 
                     self.scope
@@ -226,16 +233,16 @@ impl Block {
                         .declare(ItemName::Value(name), Item::Local(var_id));
 
                     self.stmts
-                        .push(code.push_expr(Expr::DeclVar(var_id), Type::Void));
+                        .push(code.push_expr(Expr::DeclVar(var_id)));
 
                     if let Some((_, init)) = &syn_local.init {
                         let init_id = self.add_expr(code, &init);
-                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id), Type::Void);
+                        let assign_id = code.push_expr(Expr::Assign(var_id, init_id));
 
                         if code.nested_temporaries.len() > 0 {
                             let tmp_list = std::mem::take(&mut code.nested_temporaries);
                             for tmp in tmp_list {
-                                let id = code.push_expr(Expr::DeclTmp(tmp), Type::Void);
+                                let id = code.push_expr(Expr::DeclTmp(tmp));
                                 self.stmts.push(id);
                             }
                         }
@@ -259,14 +266,14 @@ impl Block {
             }) => {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
-                code.push_expr(Expr::BinOp(id_l, *op, id_r), Type::Unknown)
+                code.push_expr(Expr::BinOp(id_l, *op, id_r))
             }
             syn::Expr::Unary(syn::ExprUnary { expr, op, .. }) => {
                 let id_arg = self.add_expr(code, expr);
                 if let syn::UnOp::Deref(_) = op {
-                    code.push_expr(Expr::DeRef(id_arg), Type::Unknown)
+                    code.push_expr(Expr::DeRef(id_arg))
                 } else {
-                    code.push_expr(Expr::UnOp(id_arg, *op), Type::Unknown)
+                    code.push_expr(Expr::UnOp(id_arg, *op))
                 }
             }
             syn::Expr::Reference(syn::ExprReference {
@@ -277,14 +284,14 @@ impl Block {
                 if is_expr_temporary(&code.exprs[id_arg as usize].expr) {
                     code.nested_temporaries.push(id_arg);
                 }
-                code.push_expr(Expr::Ref(id_arg, is_mut), Type::Unknown)
+                code.push_expr(Expr::Ref(id_arg, is_mut))
             }
             syn::Expr::Field(syn::ExprField { base, member, .. }) => {
                 let id_arg = self.add_expr(code, base);
                 match member {
                     syn::Member::Named(_name) => panic!("named indexing unsupported"),
                     syn::Member::Unnamed(index) => {
-                        code.push_expr(Expr::IndexTuple(id_arg, index.index), Type::Unknown)
+                        code.push_expr(Expr::IndexTuple(id_arg, index.index))
                     }
                 }
             }
@@ -292,7 +299,7 @@ impl Block {
                 let id_l = self.add_expr(code, left);
                 let id_r = self.add_expr(code, right);
 
-                code.push_expr(Expr::Assign(id_l, id_r), Type::Void)
+                code.push_expr(Expr::Assign(id_l, id_r))
             }
             syn::Expr::Path(syn::ExprPath { path, .. }) => {
                 let name = ItemName::Value(path_to_name(path).expect("unsupported path expr"));
@@ -313,7 +320,7 @@ impl Block {
                 let hir_ty = Type::from_syn(ty, &self.scope.borrow());
                 let arg = self.add_expr(code, expr);
 
-                code.push_expr(Expr::CastPrimitive(arg), hir_ty)
+                code.push_expr(Expr::CastPrimitive(arg, hir_ty))
             }
             syn::Expr::Lit(syn::ExprLit { lit, .. }) => match lit {
                 syn::Lit::Int(int) => {
@@ -325,7 +332,7 @@ impl Block {
                         Type::IntUnknown
                     };
                     assert!(ty.is_int());
-                    code.push_expr(Expr::LitInt(n), ty)
+                    code.push_expr(Expr::LitInt(n,ty))
                 }
                 syn::Lit::Float(float) => {
                     let n: f64 = float.base10_parse().unwrap();
@@ -336,31 +343,31 @@ impl Block {
                         Type::FloatUnknown
                     };
                     assert!(ty.is_float());
-                    code.push_expr(Expr::LitFloat(n), ty)
+                    code.push_expr(Expr::LitFloat(n,ty))
                 }
                 syn::Lit::Bool(syn::LitBool { value, .. }) => {
-                    code.push_expr(Expr::LitBool(*value), Type::Bool)
+                    code.push_expr(Expr::LitBool(*value))
                 }
                 syn::Lit::Char(char) => {
                     let value = char.value();
-                    code.push_expr(Expr::LitChar(value), Type::Char)
+                    code.push_expr(Expr::LitChar(value))
                 }
                 _ => panic!("todo handle lit {:?}", lit),
             },
             syn::Expr::Tuple(syn::ExprTuple { elems, .. }) => {
                 if elems.len() == 0 {
-                    code.push_expr(Expr::LitVoid, Type::Void)
+                    code.push_expr(Expr::LitVoid)
                 } else {
                     let fields: Vec<_> =
                         elems.iter().map(|elem| self.add_expr(code, elem)).collect();
-                    code.push_expr(Expr::NewTuple(fields), Type::Unknown)
+                    code.push_expr(Expr::NewTuple(fields))
                 }
             }
             // control flow-ish stuff
             syn::Expr::Block(syn::ExprBlock { block, .. })
             | syn::Expr::Unsafe(syn::ExprUnsafe { block, .. }) => {
                 let hir_block = self.child_block_from_syn(code, block);
-                code.push_expr(Expr::Block(hir_block), Type::Unknown)
+                code.push_expr(Expr::Block(hir_block))
             }
             syn::Expr::If(syn::ExprIf {
                 cond,
@@ -373,33 +380,33 @@ impl Block {
                 let id_else = else_branch
                     .as_ref()
                     .map(|(_, else_branch)| self.add_expr(code, else_branch));
-                code.push_expr(Expr::If(id_cond, then_block, id_else), Type::Unknown)
+                code.push_expr(Expr::If(id_cond, then_block, id_else))
             }
             syn::Expr::While(syn::ExprWhile {
                 cond, body, label, ..
             }) => {
                 let id_cond = self.add_expr(code, cond);
                 let body_block = self.child_block_from_syn(code, body);
-                let result = code.push_expr(Expr::While(id_cond, body_block), Type::Void);
+                let result = code.push_expr(Expr::While(id_cond, body_block));
                 code.resolve_breaks(result, label);
                 result
             }
             syn::Expr::Loop(syn::ExprLoop { body, label, .. }) => {
                 let body_block = self.child_block_from_syn(code, body);
-                let result = code.push_expr(Expr::Loop(body_block), Type::Never);
+                let result = code.push_expr(Expr::Loop(body_block));
                 code.resolve_breaks(result, label);
                 result
             }
             syn::Expr::Break(syn::ExprBreak { label, expr, .. }) => {
                 let break_val = expr.as_ref().map(|expr| self.add_expr(code, &expr));
                 let label = label.as_ref().map(|l| l.ident.to_string());
-                let result = code.push_expr(Expr::Break(std::u32::MAX, break_val), Type::Never);
+                let result = code.push_expr(Expr::Break(std::u32::MAX, break_val));
                 code.break_index.push((result, label));
                 result
             }
             syn::Expr::Continue(syn::ExprContinue { label, .. }) => {
                 let label = label.as_ref().map(|l| l.ident.to_string());
-                let result = code.push_expr(Expr::Continue(std::u32::MAX), Type::Never);
+                let result = code.push_expr(Expr::Continue(std::u32::MAX));
                 code.break_index.push((result, label));
                 result
             }
@@ -415,12 +422,12 @@ impl Block {
                             let item = scope.get(&name);
 
                             if let Some(Item::Fn(func)) = item {
-                                code.push_expr(Expr::Call(func, args), Type::Unknown)
+                                code.push_expr(Expr::Call(func, args))
                             } else {
                                 panic!("todo call {:?}", item);
                             }
                         } else if let Some(builtin) = path_to_builtin(path) {
-                            code.push_expr(Expr::CallBuiltin(builtin, args), Type::Unknown)
+                            code.push_expr(Expr::CallBuiltin(builtin, args))
                         } else {
                             panic!("todo call path {:?}", path);
                         }
@@ -431,9 +438,9 @@ impl Block {
             syn::Expr::Return(syn::ExprReturn { expr, .. }) => {
                 if let Some(expr) = expr {
                     let id_arg = self.add_expr(code, expr);
-                    code.push_expr(Expr::Return(Some(id_arg)), Type::Never)
+                    code.push_expr(Expr::Return(Some(id_arg)))
                 } else {
-                    code.push_expr(Expr::Return(None), Type::Never)
+                    code.push_expr(Expr::Return(None))
                 }
             }
             _ => panic!("todo handle expr => {:?}", syn_expr),
@@ -449,9 +456,9 @@ impl Block {
 
 #[derive(Debug)]
 pub enum Expr {
-    //DeclArg(u32),
+    Arg(u32,Type),
+    Var(u32,Type),
     Block(Box<Block>),
-    Var(u32),
     DeclVar(u32),
     DeclTmp(u32),
     StmtTmp(u32, Vec<u32>),
@@ -462,14 +469,14 @@ pub enum Expr {
     Ref(u32, bool), // 2nd value indicates mutability
     DeRef(u32),
     IndexTuple(u32, u32), // 2nd value indicates index
-    LitInt(u128),
-    LitFloat(f64),
+    LitInt(u128,Type),
+    LitFloat(f64,Type),
     LitBool(bool),
     LitChar(char),
     LitVoid,
     NewTuple(Vec<u32>),
     Assign(u32, u32),
-    CastPrimitive(u32),
+    CastPrimitive(u32,Type),
     If(u32, Box<Block>, Option<u32>),
     While(u32, Box<Block>),
     Loop(Box<Block>),
