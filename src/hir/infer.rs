@@ -41,11 +41,6 @@ fn convert_legacy_ty(ty: &Type) -> TypeKind {
     }
 }
 
-fn global_type_from_legacy(ty: &Type) -> GlobalType {
-    let kind = convert_legacy_ty(ty);
-    GlobalType{ kind, args: None }
-}
-
 #[derive(Debug,Clone,PartialEq)]
 pub enum TypeKind {
     Unknown,
@@ -56,10 +51,22 @@ pub enum TypeKind {
 }
 
 impl TypeKind {
+    pub fn ptr() -> TypeKind {
+        Self::Int(Some((IntWidth::IntSize,IntSign::Unsigned)))
+    }
+
     fn is_known(&self) -> bool {
         match self {
             TypeKind::Unknown | TypeKind::Int(None) => false,
             _ => true
+        }
+    }
+
+    /// Is the type a primitive for the purposes of operator inference?
+    fn is_op_prim(&self) -> bool {
+        match self {
+            TypeKind::Bool | TypeKind::Int(_) => true,
+            _ => false
         }
     }
 }
@@ -70,24 +77,56 @@ struct LocalType {
     args: Vec<TypeVar>
 }
 
+enum UnifyResult {
+    A,
+    B
+}
+
 impl LocalType {
-    fn set_unify(&mut self, other: &LocalType) {
+    fn unify(&mut self, other: &mut LocalType) {
         assert_eq!(self.args.len(), 0);
         assert_eq!(other.args.len(), 0);
 
-        match (&self.kind,&other.kind) {
-            // our type is more specific
-            (_,TypeKind::Unknown) => (),
-            (TypeKind::Int(Some(_)),TypeKind::Int(None)) => (),
+        let res = Self::unify_kind(&self.kind,&other.kind);
 
-            _ => panic!("todo unify kinds {:?} {:?}",self.kind,other.kind)
+        match res {
+            UnifyResult::A => other.kind = self.kind.clone(),
+            UnifyResult::B => self.kind = other.kind.clone()
+        }
+    }
+
+    fn unify_g(&mut self, other: &GlobalType) {
+        assert_eq!(self.args.len(), 0);
+        assert!(other.args.is_none());
+
+        if self.kind == other.kind {
+            return;
+        }
+
+        let res = Self::unify_kind(&self.kind,&other.kind);
+
+        match res {
+            UnifyResult::A => (),
+            UnifyResult::B => self.kind = other.kind.clone()
+        }
+    }
+
+    fn unify_kind(a: &TypeKind, b: &TypeKind) -> UnifyResult {
+        match (a,b) {
+            (_,TypeKind::Unknown) => UnifyResult::A,
+            (TypeKind::Unknown,_) => UnifyResult::B,
+
+            (TypeKind::Int(Some(_)),TypeKind::Int(None)) => UnifyResult::A,
+            (TypeKind::Int(None),TypeKind::Int(Some(_))) => UnifyResult::B,
+
+            _ => panic!("todo unify kinds {:?} {:?}",a,b)
         }
     }
 }
 
 //type GlobalType = Rc<GlobalTypeData>;
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct GlobalType {
     kind: TypeKind,
     args: Option<Rc<[GlobalType]>>
@@ -97,24 +136,29 @@ impl GlobalType {
     pub fn simple(kind: TypeKind) -> Self {
         GlobalType{kind, args: None}
     }
+
+    pub fn from_legacy(ty: &Type) -> GlobalType {
+        let kind = convert_legacy_ty(ty);
+        GlobalType{ kind, args: None }
+    }
 }
 
 #[derive(Debug)]
 enum TypeConstraint {
     Equal(TypeVar,TypeVar),
     EqualLit(TypeVar,GlobalType),
-    Op{op: OpConstraint, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
-    UnOp{op: UnOpConstraint, res: TypeVar, arg: TypeVar}
+    OpBinary{op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
+    OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar}
 }
 
 #[derive(Debug,Clone,Copy)]
-enum UnOpConstraint {
+enum OpUnary {
     Neg,
     Not
 }
 
 #[derive(Debug,Clone,Copy)]
-enum OpConstraint {
+enum OpBinary {
     Ord,
     Eq,
 
@@ -145,37 +189,38 @@ enum OpConstraint {
     ShiftREq,
 }
 
-fn op_constraint_and_type(op: &BinOp) -> (OpConstraint,TypeKind) {
+fn op_constraint_and_type(op: &BinOp) -> (OpBinary,TypeKind) {
     match op {
-        BinOp::Lt(_) | BinOp::Gt(_) | BinOp::Le(_) | BinOp::Ge(_) => (OpConstraint::Ord,TypeKind::Bool),
+        BinOp::Lt(_) | BinOp::Gt(_) | BinOp::Le(_) | BinOp::Ge(_) => (OpBinary::Ord,TypeKind::Bool),
 
-        BinOp::Eq(_) | BinOp::Ne(_) => (OpConstraint::Eq,TypeKind::Bool),
+        BinOp::Eq(_) | BinOp::Ne(_) => (OpBinary::Eq,TypeKind::Bool),
 
-        BinOp::Add(_) => (OpConstraint::Add,TypeKind::Unknown),
-        BinOp::Sub(_) => (OpConstraint::Sub,TypeKind::Unknown),
-        BinOp::Mul(_) => (OpConstraint::Mul,TypeKind::Unknown),
-        BinOp::Div(_) => (OpConstraint::Div,TypeKind::Unknown),
-        BinOp::Rem(_) => (OpConstraint::Rem,TypeKind::Unknown),
+        BinOp::Add(_) => (OpBinary::Add,TypeKind::Unknown),
+        BinOp::Sub(_) => (OpBinary::Sub,TypeKind::Unknown),
+        BinOp::Mul(_) => (OpBinary::Mul,TypeKind::Unknown),
+        BinOp::Div(_) => (OpBinary::Div,TypeKind::Unknown),
+        BinOp::Rem(_) => (OpBinary::Rem,TypeKind::Unknown),
 
-        BinOp::BitOr(_) => (OpConstraint::BitOr,TypeKind::Unknown),
-        BinOp::BitAnd(_) => (OpConstraint::BitAnd,TypeKind::Unknown),
-        BinOp::BitXor(_) => (OpConstraint::BitXor,TypeKind::Unknown),
+        BinOp::BitOr(_) => (OpBinary::BitOr,TypeKind::Unknown),
+        BinOp::BitAnd(_) => (OpBinary::BitAnd,TypeKind::Unknown),
+        BinOp::BitXor(_) => (OpBinary::BitXor,TypeKind::Unknown),
 
-        BinOp::Shl(_) => (OpConstraint::ShiftL,TypeKind::Unknown),
-        BinOp::Shr(_) => (OpConstraint::ShiftR,TypeKind::Unknown),
+        BinOp::Shl(_) => (OpBinary::ShiftL,TypeKind::Unknown),
+        BinOp::Shr(_) => (OpBinary::ShiftR,TypeKind::Unknown),
 
-        BinOp::AddEq(_) => (OpConstraint::AddEq,TypeKind::Unknown),
-        BinOp::SubEq(_) => (OpConstraint::SubEq,TypeKind::Unknown),
-        BinOp::MulEq(_) => (OpConstraint::MulEq,TypeKind::Unknown),
-        BinOp::DivEq(_) => (OpConstraint::DivEq,TypeKind::Unknown),
-        BinOp::RemEq(_) => (OpConstraint::RemEq,TypeKind::Unknown),
+        // remaining ops result in void
+        BinOp::AddEq(_) => (OpBinary::AddEq,TypeKind::Tuple),
+        BinOp::SubEq(_) => (OpBinary::SubEq,TypeKind::Tuple),
+        BinOp::MulEq(_) => (OpBinary::MulEq,TypeKind::Tuple),
+        BinOp::DivEq(_) => (OpBinary::DivEq,TypeKind::Tuple),
+        BinOp::RemEq(_) => (OpBinary::RemEq,TypeKind::Tuple),
 
-        BinOp::BitOrEq(_) => (OpConstraint::BitOrEq,TypeKind::Unknown),
-        BinOp::BitAndEq(_) => (OpConstraint::BitAndEq,TypeKind::Unknown),
-        BinOp::BitXorEq(_) => (OpConstraint::BitXorEq,TypeKind::Unknown),
+        BinOp::BitOrEq(_) => (OpBinary::BitOrEq,TypeKind::Tuple),
+        BinOp::BitAndEq(_) => (OpBinary::BitAndEq,TypeKind::Tuple),
+        BinOp::BitXorEq(_) => (OpBinary::BitXorEq,TypeKind::Tuple),
 
-        BinOp::ShlEq(_) => (OpConstraint::ShiftLEq,TypeKind::Unknown),
-        BinOp::ShrEq(_) => (OpConstraint::ShiftREq,TypeKind::Unknown),
+        BinOp::ShlEq(_) => (OpBinary::ShiftLEq,TypeKind::Tuple),
+        BinOp::ShrEq(_) => (OpBinary::ShiftREq,TypeKind::Tuple),
 
         _ => panic!("todo op {:?}",op)
     }
@@ -202,12 +247,20 @@ impl FuncTypes {
             constraints_sat: vec!()
         };
 
-        types.init_expr(func, func.root_expr as u32);
+        let main_var = types.init_expr(func, func.root_expr as u32);
+        types.add_constraint(TypeConstraint::EqualLit(main_var, func.ret_ty.clone()));
 
         types
     }
 
     pub fn init_expr(&mut self, func: &FuncHIR, expr_id: u32) -> TypeVar {
+        {
+            let old = self.expr_vars[expr_id as usize];
+            if old != TYPE_INVALID {
+                return old;
+            }
+        }
+
         let expr = &func.exprs[expr_id as usize].expr;
         let result = match expr {
             Expr::DeclVar(_) => {
@@ -229,7 +282,7 @@ impl FuncTypes {
                 let (op,ty) = op_constraint_and_type(op);
                 let res = self.new_var(ty);
 
-                self.add_constraint(TypeConstraint::Op{op, res, lhs, rhs});
+                self.add_constraint(TypeConstraint::OpBinary{op, res, lhs, rhs});
 
                 res
             }
@@ -237,8 +290,8 @@ impl FuncTypes {
                 let arg = self.init_expr(func,*arg);
                 let res = self.new_var(TypeKind::Unknown);
                 match op {
-                    UnOp::Not(_) => self.add_constraint(TypeConstraint::UnOp{op:UnOpConstraint::Not, res,arg}),
-                    UnOp::Neg(_) => self.add_constraint(TypeConstraint::UnOp{op:UnOpConstraint::Neg, res,arg}),
+                    UnOp::Not(_) => self.add_constraint(TypeConstraint::OpUnary{op:OpUnary::Not, res,arg}),
+                    UnOp::Neg(_) => self.add_constraint(TypeConstraint::OpUnary{op:OpUnary::Neg, res,arg}),
                     UnOp::Deref(_) => panic!()
                 }
                 res
@@ -303,7 +356,7 @@ impl FuncTypes {
 
                 for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
                     let var = self.init_expr(func,*arg);
-                    self.add_constraint(TypeConstraint::EqualLit(var,global_type_from_legacy(ty)));
+                    self.add_constraint(TypeConstraint::EqualLit(var,GlobalType::from_legacy(ty)));
                 }
 
                 self.new_var(convert_legacy_ty(&sig.output))
@@ -333,22 +386,26 @@ impl FuncTypes {
     pub fn solve(&mut self) {
         if self.constraints.len() > 0 {
             let mut i = 0;
+            println!("infer start {}",self.constraints.len());
 
             while i < self.constraints.len() {
 
-                let mut sat = false;
-
                 let c = &self.constraints[i];
 
-                match c {
-                    TypeConstraint::Equal(var1, var2) => {
-                        sat = self.solve_equal(*var1,*var2);
+                let sat = match c {
+                    TypeConstraint::Equal(var1, var2) => self.solve_equal(*var1,*var2),
+                    TypeConstraint::EqualLit(var, ty) => {
+
+                        let lt = &mut self.var_types[var.0 as usize];
+
+                        lt.unify_g(&ty);
+                
+                        lt.kind.is_known()
                     }
-                    TypeConstraint::UnOp{ op, res, arg } => {
-                        sat = self.solve_unary(*op,*res,*arg);
-                    }
+                    TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
+                    TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
                     _ => panic!("todo solve {:?}",c)
-                }
+                };
 
                 if sat {
                     if i == self.constraints.len() - 1 {
@@ -360,6 +417,8 @@ impl FuncTypes {
                     i += 1;
                 }
             }
+
+            println!("infer finish {}",self.constraints.len());
         }
     }
 
@@ -378,31 +437,129 @@ impl FuncTypes {
         }
     }
 
+    fn get_mut_3(&mut self, var1: TypeVar, var2: TypeVar, var3: TypeVar) -> (&mut LocalType, &mut LocalType, &mut LocalType) {
+        let var1 = var1.0 as isize;
+        let var2 = var2.0 as isize;
+        let var3 = var3.0 as isize;
+
+        // safety: indices must be distinct and valid
+        assert!(var1 != var2);
+        assert!(var2 != var3);
+        assert!(var1 != var3);
+
+        assert!((var1 as usize) < self.var_types.len());
+        assert!((var2 as usize) < self.var_types.len());
+        assert!((var3 as usize) < self.var_types.len());
+
+        let ptr = self.var_types.as_mut_ptr();
+        unsafe {
+            (
+                &mut *ptr.offset(var1 as isize),
+                &mut *ptr.offset(var2 as isize),
+                &mut *ptr.offset(var3 as isize)
+            )
+        }
+    }
+
+    fn get_global(&self, var: TypeVar) -> GlobalType {
+        let var = var.0 as usize;
+        let ty = &self.var_types[var];
+        assert_eq!(ty.args.len(),0);
+        GlobalType::simple(ty.kind.clone())
+    }
+
     fn solve_equal(&mut self, var1: TypeVar, var2: TypeVar) -> bool {
         let (t1,t2) = self.get_mut_2(var1, var2);
 
         if t1 != t2 {
-            t1.set_unify(t2);
-            *t2 = t1.clone();
+            t1.unify(t2);
         }
+        println!("? {:?}",t1);
 
         t1.kind.is_known()
     }
 
-    fn solve_unary(&mut self, op: UnOpConstraint, res: TypeVar, arg: TypeVar) -> bool {
+    fn solve_unary(&mut self, op: OpUnary, res: TypeVar, arg: TypeVar) -> bool {
         let (arg,res) = self.get_mut_2(arg, res);
 
-        match arg.kind {
-            TypeKind::Int(_) | TypeKind::Bool => {
-                if arg != res {
-                    arg.set_unify(res);
-                    *res = arg.clone();
-                }
-                return arg.kind.is_known();
-            },
-            _ => () // TODO TRAIT?
+        if arg.kind.is_op_prim() {
+            if arg != res {
+                arg.unify(res);
+            }
+            arg.kind.is_known()
+        } else {
+            // TODO TRAIT?
+            false
         }
+    }
 
-        false
+    fn solve_binary(&mut self, op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar) -> bool {
+        match op {
+            OpBinary::ShiftLEq | OpBinary::ShiftREq => {
+                let (lhs,rhs) = self.get_mut_2(lhs, rhs);
+                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                    // not much we can do
+                    true
+                } else {
+                    // todo trait lookup
+                    false
+                }
+            }
+            OpBinary::Eq | OpBinary::Ord |
+            OpBinary::AddEq | OpBinary::SubEq | OpBinary::MulEq | OpBinary::DivEq | OpBinary::RemEq |
+            OpBinary::BitAndEq | OpBinary::BitOrEq | OpBinary::BitXorEq => {
+                let (lhs,rhs) = self.get_mut_2(lhs, rhs);
+                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                    if lhs != rhs {
+                        lhs.unify(rhs);
+                    }
+                    lhs.kind.is_known()
+                } else {
+                    // todo trait lookup
+                    false
+                }
+            }
+            OpBinary::ShiftL | OpBinary::ShiftR => {
+                let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
+
+                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                    // lhs and res should match
+                    if lhs != res {
+                        lhs.unify(res);
+                    }
+                    lhs.kind.is_known()
+                } else {
+                    // todo trait lookup
+                    false
+                }
+            }
+            OpBinary::Add | OpBinary::Sub | OpBinary::Mul | OpBinary::Div | OpBinary::Rem |
+            OpBinary::BitAnd | OpBinary::BitOr | OpBinary::BitXor => {
+                let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
+                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                    if lhs != rhs {
+                        lhs.unify(rhs);
+                    }
+                    if lhs != res {
+                        lhs.unify(res);
+                    }
+                    if rhs != res {
+                        rhs.unify(res);
+                    }
+                    lhs.kind.is_known()
+                } else {
+                    // todo trait lookup
+                    false
+                }
+            }
+            _ => panic!("? {:?}",op)
+        }
+    }
+
+    pub fn apply_types(&self, func: &mut FuncHIR) {
+        assert_eq!(func.exprs.len(),self.expr_vars.len());
+        for (expr,var) in func.exprs.iter_mut().zip(self.expr_vars.iter()) {
+            expr.ty = self.get_global(*var);
+        }
     }
 }

@@ -1,12 +1,15 @@
+
 use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{CompoundType, FloatType, IntType, Type},
+        types::{CompoundType, FloatType, IntType, Type}, infer::GlobalType,
     },
     is_verbose,
     profiler::profile,
 };
+
+use crate::hir::infer::TypeKind;
 
 use super::instr::Instr;
 
@@ -31,7 +34,7 @@ struct LoopResult {
 struct FrameAllocator(u32);
 
 impl FrameAllocator {
-    fn alloc(&mut self, ty: Type) -> u32 {
+    fn alloc(&mut self, ty: &GlobalType) -> u32 {
         let size = ty.byte_size() as u32;
         let align = ty.byte_align() as u32;
         while self.0 % align != 0 {
@@ -57,14 +60,15 @@ pub fn compile(func: &Function) -> Vec<Instr> {
 
     profile("lower HIR -> BC", || {
         let mut frame = FrameAllocator::default();
-        let return_slot = frame.alloc(Type::Int(IntType::USize));
+        let return_slot = frame.alloc(&GlobalType::simple(TypeKind::ptr()));
 
         assert_eq!(return_slot, 0);
 
         let mut var_map = vec![None; input_fn.vars.len()];
 
         for (i, input) in sig.inputs.iter().enumerate() {
-            var_map[i] = Some(frame.alloc(*input));
+            let ty = GlobalType::from_legacy(input);
+            var_map[i] = Some(frame.alloc(&ty));
         }
 
         let mut compiler = BCompiler {
@@ -463,7 +467,8 @@ impl<'a> BCompiler<'a> {
 
     // gets the address of something behind an arbitrary number of references
     fn get_struct_addr(&mut self, expr_id: u32) -> u32 {
-        let ty = panic!("todo type");//&self.input_fn.exprs[expr_id as usize].ty;
+        panic!("fixme pls");
+        /*let ty = panic!("todo type");//&self.input_fn.exprs[expr_id as usize].ty;
         match ty {
             Type::Compound(CompoundType::Ref(wrapped_ty, _)) => {
                 let slot = self.lower_expr(expr_id, None);
@@ -484,14 +489,14 @@ impl<'a> BCompiler<'a> {
                 }
             }
             _ => self.get_place_addr(expr_id, None),
-        }
+        }*/
     }
 
     fn get_place_addr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> u32 {
         if let Some(ref_slot) = self.try_get_place_slot(expr_id) {
             // destinations for pointers should always be valid
             let dest_slot =
-                mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(Type::Int(IntType::USize)));
+                mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&GlobalType::simple(TypeKind::ptr())));
             self.push_code(Instr::SlotPtr(dest_slot, ref_slot));
 
             dest_slot
@@ -528,7 +533,8 @@ impl<'a> BCompiler<'a> {
 
     fn lower_expr(&mut self, expr_id: u32, mandatory_dest_slot: Option<u32>) -> u32 {
         let ExprInfo { expr, ty, .. } = &self.input_fn.exprs[expr_id as usize];
-        let ty: &Type = panic!("todo type");
+
+        let ty = ty.clone();
 
         let saved_frame = self.frame;
 
@@ -537,15 +543,15 @@ impl<'a> BCompiler<'a> {
             Expr::Var(..) | Expr::IndexTuple(..) => {
                 if let Some(slot) = self.try_get_place_slot(expr_id) {
                     if let Some(mandatory_dest_slot) = mandatory_dest_slot {
-                        self.insert_move_ss(mandatory_dest_slot, slot, *ty);
+                        self.insert_move_ss(mandatory_dest_slot, slot, &ty);
                         mandatory_dest_slot
                     } else {
                         slot
                     }
                 } else {
-                    let res_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                    let res_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                     let ptr_slot = self.get_place_addr(expr_id, None);
-                    self.insert_move_sp(res_slot, ptr_slot, *ty);
+                    self.insert_move_sp(res_slot, ptr_slot, &ty);
                     res_slot
                 }
             }
@@ -611,23 +617,23 @@ impl<'a> BCompiler<'a> {
                 // converts a pointer to a value -- this is probably going to cause problems
                 let ptr = self.lower_expr(*arg, None);
                 self.frame = saved_frame; // arg ready, reset stack
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
-                self.insert_move_sp(dest_slot, ptr, *ty);
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
+                self.insert_move_sp(dest_slot, ptr, &ty);
                 dest_slot
             }
             Expr::LitVoid => SLOT_INVALID,
             Expr::LitBool(val) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 self.push_code(Instr::I8_Const(dest_slot, *val as i8));
                 dest_slot
             }
             Expr::LitChar(val) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 self.push_code(Instr::I32_Const(dest_slot, *val as i32));
                 dest_slot
             }
             Expr::LitInt(n,_) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
 
                 let width = ty.byte_size();
                 match width {
@@ -645,7 +651,8 @@ impl<'a> BCompiler<'a> {
                 dest_slot
             }
             Expr::LitFloat(n,_) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                panic!("todo float")
+                /*let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
 
                 match ty {
                     Type::Float(FloatType::F64) => {
@@ -657,10 +664,11 @@ impl<'a> BCompiler<'a> {
                     _ => panic!("todo more literal floats"),
                 }
 
-                dest_slot
+                dest_slot*/
             }
             Expr::CastPrimitive(src,_) => {
-                let src_ty = self.input_fn.exprs[*src as usize].ty;
+                panic!("todo prim cast");
+                /*let src_ty = self.input_fn.exprs[*src as usize].ty;
                 let src_ty: Type = panic!("todo type");
                 let res_ty = ty;
 
@@ -848,17 +856,18 @@ impl<'a> BCompiler<'a> {
                 if let Some(cast_ins_ctor) = cast_ins_ctor {
                     let src_slot = self.lower_expr(*src, None);
                     self.frame = saved_frame; // arg ready, reset stack
-                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                     let ins = cast_ins_ctor(dest_slot, src_slot);
                     self.push_code(ins);
                     dest_slot
                 } else {
                     // no-op cast
                     self.lower_expr(*src, mandatory_dest_slot)
-                }
+                }*/
             }
             Expr::BinOpPrimitive(lhs, op, rhs) => {
-                let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
+                panic!("prim bin-op");
+                /*let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
                 let arg_ty = panic!("todo type");
 
                 match op {
@@ -903,7 +912,7 @@ impl<'a> BCompiler<'a> {
 
                     self.frame = saved_frame; // args ready, reset stack
 
-                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
 
                     let ins = if flag == BinOpFlag::SwapArgs {
                         ins_ctor(dest_slot, r_slot, l_slot)
@@ -912,16 +921,17 @@ impl<'a> BCompiler<'a> {
                     };
                     self.push_code(ins);
                     dest_slot
-                }
+                }*/
             }
             Expr::UnOpPrimitive(arg, op) => {
-                let arg_slot = self.lower_expr(*arg, None);
+                /*let arg_slot = self.lower_expr(*arg, None);
                 let ins_ctor = instr_for_un_op(*op, *ty);
                 self.frame = saved_frame; // arg ready, reset stack
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 let ins = ins_ctor(dest_slot, arg_slot);
                 self.push_code(ins);
-                dest_slot
+                dest_slot*/
+                panic!("prim un-op");
             }
             Expr::CallBuiltin(name, args) => {
                 if name == "print_int" {
@@ -949,7 +959,7 @@ impl<'a> BCompiler<'a> {
                 }
                 SLOT_INVALID
             }
-            Expr::Block(block) => self.lower_block(block, *ty, mandatory_dest_slot),
+            Expr::Block(block) => self.lower_block(block, &ty, mandatory_dest_slot),
             Expr::Break(loop_id, break_expr) => {
                 if let Some(break_expr) = break_expr {
                     let dest_slot = self.get_loop_result(*loop_id);
@@ -995,7 +1005,7 @@ impl<'a> BCompiler<'a> {
                 SLOT_INVALID
             }
             Expr::Loop(body) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 self.loop_results.push(LoopResult {
                     loop_id: expr_id,
                     slot: dest_slot,
@@ -1018,7 +1028,7 @@ impl<'a> BCompiler<'a> {
                 self.frame = saved_frame; // cond_read, reset stack
                 self.push_code(Instr::Bad);
 
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 let saved_frame = self.frame;
 
                 self.lower_block(then_block, *ty, Some(dest_slot));
@@ -1046,7 +1056,7 @@ impl<'a> BCompiler<'a> {
                 dest_slot
             }
             Expr::Call(func, args) => {
-                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 let saved_frame = self.frame;
 
                 let call_base = self.frame.align_for_call();
@@ -1058,7 +1068,7 @@ impl<'a> BCompiler<'a> {
                 self.push_code(Instr::SlotPtr(ret_ptr_slot, dest_slot));
 
                 for (ty, ex) in sig.inputs.iter().zip(args.iter()) {
-                    let slot = self.frame.alloc(*ty);
+                    let slot = self.frame.alloc(&ty);
 
                     let arg_frame = self.frame;
                     self.lower_expr(*ex, Some(slot));
@@ -1073,7 +1083,7 @@ impl<'a> BCompiler<'a> {
             Expr::NewTuple(args) => {
                 let layout = ty.layout();
 
-                let base_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(*ty));
+                let base_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
                 let saved_frame = self.frame;
 
                 for (arg_id, offset) in args.iter().zip(layout.member_offsets.iter()) {
@@ -1132,7 +1142,7 @@ impl<'a> BCompiler<'a> {
         dest_slot
     }
 
-    fn lower_block(&mut self, block: &Block, ty: Type, mandatory_dest_slot: Option<u32>) -> u32 {
+    fn lower_block(&mut self, block: &Block, ty: &GlobalType, mandatory_dest_slot: Option<u32>) -> u32 {
         let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(ty));
         let saved_frame = self.frame;
         let temp_len = self.temp_slots.len();
@@ -1150,7 +1160,7 @@ impl<'a> BCompiler<'a> {
         dest_slot
     }
 
-    fn insert_move_ss(&mut self, dest: u32, src: u32, ty: Type) {
+    fn insert_move_ss(&mut self, dest: u32, src: u32, ty: &GlobalType) {
         let size = ty.byte_size();
         if size == 0 {
             return;
@@ -1202,7 +1212,7 @@ impl<'a> BCompiler<'a> {
         }
     }
 
-    fn insert_move_ps(&mut self, dest: u32, src: u32, ty: Type) {
+    fn insert_move_ps(&mut self, dest: u32, src: u32, ty: &GlobalType) {
         let size = ty.byte_size();
         if size == 0 {
             return;
@@ -1225,7 +1235,7 @@ impl<'a> BCompiler<'a> {
         }
     }
 
-    fn insert_move_sp(&mut self, dest: u32, src: u32, ty: Type) {
+    fn insert_move_sp(&mut self, dest: u32, src: u32, ty: &GlobalType) {
         // todo ignore type alignment and use src/dst alignment
         let size = ty.byte_size();
         if size == 0 {
@@ -1251,8 +1261,8 @@ impl<'a> BCompiler<'a> {
 
     fn insert_return(&mut self, res: u32) {
         //let ty = self.input_fn.exprs[self.input_fn.root_expr].ty;
-        let ty = panic!("todo type");
-        self.insert_move_ps(0, res, ty);
+        let ty = self.input_fn.ret_ty;
+        self.insert_move_ps(0, res, &ty);
         self.push_code(Instr::Return);
     }
 

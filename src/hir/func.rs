@@ -10,6 +10,7 @@ pub struct FuncHIR {
     pub root_expr: usize,
     pub exprs: Vec<ExprInfo>,
     pub vars: Vec<u32>, // map into expr list
+    pub ret_ty: GlobalType,
     break_index: Vec<(u32, Option<String>)>,
     nested_temporaries: Vec<u32>,
 }
@@ -50,6 +51,7 @@ impl FuncHIR {
             exprs: vec![],
             vars: vec![],
             break_index: vec![],
+            ret_ty: GlobalType::from_legacy(&ty_sig.output),
             nested_temporaries: vec![],
         };
         profile("lower AST -> HIR", || {
@@ -71,10 +73,14 @@ impl FuncHIR {
         }
 
         let mut types = FuncTypes::new(&mut code);
+        println!("1");
         types.solve();
+        println!("2");
+        types.solve();
+        println!("3");
+        types.solve();
+        types.apply_types(&mut code);
 
-        panic!("infer");
-        
         //profile("type infer", || code.infer_types());
         //panic!("todo type check");
 
