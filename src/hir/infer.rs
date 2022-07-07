@@ -10,7 +10,7 @@ use super::{func::{Block, Expr, FuncHIR, ExprInfo}, types::{Type, IntType}};
 pub struct TypeVar(u32);
 
 #[derive(Debug,Clone,Copy,PartialEq)]
-enum IntWidth {
+pub enum IntWidth {
     Int8,
     Int16,
     Int32,
@@ -20,7 +20,7 @@ enum IntWidth {
 }
 
 #[derive(Debug,Clone,Copy,PartialEq)]
-enum IntSign {
+pub enum IntSign {
     Signed,
     Unsigned
 }
@@ -124,12 +124,10 @@ impl LocalType {
     }
 }
 
-//type GlobalType = Rc<GlobalTypeData>;
-
 #[derive(Debug,Clone)]
 pub struct GlobalType {
-    kind: TypeKind,
-    args: Option<Rc<[GlobalType]>>
+    pub kind: TypeKind,
+    pub args: Option<Rc<[GlobalType]>>
 }
 
 impl GlobalType {
@@ -140,6 +138,32 @@ impl GlobalType {
     pub fn from_legacy(ty: &Type) -> GlobalType {
         let kind = convert_legacy_ty(ty);
         GlobalType{ kind, args: None }
+    }
+
+    pub fn byte_size(&self) -> usize {
+        match self.kind {
+            TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
+            TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
+            TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
+            TypeKind::Tuple => {
+                assert!(self.args.is_none());
+                0
+            },
+            _ => panic!("todo size {:?}",self.kind)
+        }
+    }
+
+    pub fn byte_align(&self) -> usize {
+        match self.kind {
+            TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
+            TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
+            TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
+            TypeKind::Tuple => {
+                assert!(self.args.is_none());
+                1
+            },
+            _ => panic!("todo align {:?}",self.kind)
+        }
     }
 }
 
@@ -323,7 +347,8 @@ impl FuncTypes {
                     let res_var = self.init_expr(func,res);
                     self.add_constraint(TypeConstraint::Equal(block_var, res_var));
                 } else {
-                    println!("todo never check");
+                    // TODO never check
+                    self.add_constraint(TypeConstraint::EqualLit(block_var, GlobalType::simple(TypeKind::Tuple)));
                 }
 
                 block_var
