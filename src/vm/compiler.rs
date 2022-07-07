@@ -224,116 +224,122 @@ fn bin_op_int(op: syn::BinOp, signed: bool) -> (BinOpInt, BinOpFlag) {
     }
 }
 
-fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr, BinOpFlag) {
-    if arg_ty.is_int() || arg_ty == Type::Bool || arg_ty == Type::Char {
-        let (op, flag) = bin_op_int(op, arg_ty.is_signed());
-        let width = arg_ty.byte_size();
-        let instr = match (width, op) {
-            (1, BinOpInt::Add) => Instr::I8_Add,
-            (1, BinOpInt::Sub) => Instr::I8_Sub,
-            (1, BinOpInt::Mul) => Instr::I8_Mul,
-            (1, BinOpInt::Or) => Instr::I8_Or,
-            (1, BinOpInt::And) => Instr::I8_And,
-            (1, BinOpInt::Xor) => Instr::I8_Xor,
-            (1, BinOpInt::ShiftL) => Instr::I8_ShiftL,
-            (1, BinOpInt::Eq) => Instr::I8_Eq,
-            (1, BinOpInt::NotEq) => Instr::I8_NotEq,
-            (1, BinOpInt::S_Div) => Instr::I8_S_Div,
-            (1, BinOpInt::S_Rem) => Instr::I8_S_Rem,
-            (1, BinOpInt::S_ShiftR) => Instr::I8_S_ShiftR,
-            (1, BinOpInt::S_Lt) => Instr::I8_S_Lt,
-            (1, BinOpInt::S_LtEq) => Instr::I8_S_LtEq,
-            (1, BinOpInt::U_Div) => Instr::I8_U_Div,
-            (1, BinOpInt::U_Rem) => Instr::I8_U_Rem,
-            (1, BinOpInt::U_ShiftR) => Instr::I8_U_ShiftR,
-            (1, BinOpInt::U_Lt) => Instr::I8_U_Lt,
-            (1, BinOpInt::U_LtEq) => Instr::I8_U_LtEq,
+fn instr_for_bin_op(op: syn::BinOp, arg_ty: &GlobalType) -> (fn(u32, u32, u32) -> Instr, BinOpFlag) {
+    match &arg_ty.kind {
+        TypeKind::Int(_) | TypeKind::Bool | TypeKind::Char => {
+            let (op, flag) = bin_op_int(op, arg_ty.is_signed());
+            let width = arg_ty.byte_size();
 
-            (2, BinOpInt::Add) => Instr::I16_Add,
-            (2, BinOpInt::Sub) => Instr::I16_Sub,
-            (2, BinOpInt::Mul) => Instr::I16_Mul,
-            (2, BinOpInt::Or) => Instr::I16_Or,
-            (2, BinOpInt::And) => Instr::I16_And,
-            (2, BinOpInt::Xor) => Instr::I16_Xor,
-            (2, BinOpInt::ShiftL) => Instr::I16_ShiftL,
-            (2, BinOpInt::Eq) => Instr::I16_Eq,
-            (2, BinOpInt::NotEq) => Instr::I16_NotEq,
-            (2, BinOpInt::S_Div) => Instr::I16_S_Div,
-            (2, BinOpInt::S_Rem) => Instr::I16_S_Rem,
-            (2, BinOpInt::S_ShiftR) => Instr::I16_S_ShiftR,
-            (2, BinOpInt::S_Lt) => Instr::I16_S_Lt,
-            (2, BinOpInt::S_LtEq) => Instr::I16_S_LtEq,
-            (2, BinOpInt::U_Div) => Instr::I16_U_Div,
-            (2, BinOpInt::U_Rem) => Instr::I16_U_Rem,
-            (2, BinOpInt::U_ShiftR) => Instr::I16_U_ShiftR,
-            (2, BinOpInt::U_Lt) => Instr::I16_U_Lt,
-            (2, BinOpInt::U_LtEq) => Instr::I16_U_LtEq,
-
-            (4, BinOpInt::Add) => Instr::I32_Add,
-            (4, BinOpInt::Sub) => Instr::I32_Sub,
-            (4, BinOpInt::Mul) => Instr::I32_Mul,
-            (4, BinOpInt::Or) => Instr::I32_Or,
-            (4, BinOpInt::And) => Instr::I32_And,
-            (4, BinOpInt::Xor) => Instr::I32_Xor,
-            (4, BinOpInt::ShiftL) => Instr::I32_ShiftL,
-            (4, BinOpInt::Eq) => Instr::I32_Eq,
-            (4, BinOpInt::NotEq) => Instr::I32_NotEq,
-            (4, BinOpInt::S_Div) => Instr::I32_S_Div,
-            (4, BinOpInt::S_Rem) => Instr::I32_S_Rem,
-            (4, BinOpInt::S_ShiftR) => Instr::I32_S_ShiftR,
-            (4, BinOpInt::S_Lt) => Instr::I32_S_Lt,
-            (4, BinOpInt::S_LtEq) => Instr::I32_S_LtEq,
-            (4, BinOpInt::U_Div) => Instr::I32_U_Div,
-            (4, BinOpInt::U_Rem) => Instr::I32_U_Rem,
-            (4, BinOpInt::U_ShiftR) => Instr::I32_U_ShiftR,
-            (4, BinOpInt::U_Lt) => Instr::I32_U_Lt,
-            (4, BinOpInt::U_LtEq) => Instr::I32_U_LtEq,
-
-            (8, BinOpInt::Add) => Instr::I64_Add,
-            (8, BinOpInt::Sub) => Instr::I64_Sub,
-            (8, BinOpInt::Mul) => Instr::I64_Mul,
-            (8, BinOpInt::Or) => Instr::I64_Or,
-            (8, BinOpInt::And) => Instr::I64_And,
-            (8, BinOpInt::Xor) => Instr::I64_Xor,
-            (8, BinOpInt::ShiftL) => Instr::I64_ShiftL,
-            (8, BinOpInt::Eq) => Instr::I64_Eq,
-            (8, BinOpInt::NotEq) => Instr::I64_NotEq,
-            (8, BinOpInt::S_Div) => Instr::I64_S_Div,
-            (8, BinOpInt::S_Rem) => Instr::I64_S_Rem,
-            (8, BinOpInt::S_ShiftR) => Instr::I64_S_ShiftR,
-            (8, BinOpInt::S_Lt) => Instr::I64_S_Lt,
-            (8, BinOpInt::S_LtEq) => Instr::I64_S_LtEq,
-            (8, BinOpInt::U_Div) => Instr::I64_U_Div,
-            (8, BinOpInt::U_Rem) => Instr::I64_U_Rem,
-            (8, BinOpInt::U_ShiftR) => Instr::I64_U_ShiftR,
-            (8, BinOpInt::U_Lt) => Instr::I64_U_Lt,
-            (8, BinOpInt::U_LtEq) => Instr::I64_U_LtEq,
-
-            (16, BinOpInt::Add) => Instr::I128_Add,
-            (16, BinOpInt::Sub) => Instr::I128_Sub,
-            (16, BinOpInt::Mul) => Instr::I128_Mul,
-            (16, BinOpInt::Or) => Instr::I128_Or,
-            (16, BinOpInt::And) => Instr::I128_And,
-            (16, BinOpInt::Xor) => Instr::I128_Xor,
-            (16, BinOpInt::ShiftL) => Instr::I128_ShiftL,
-            (16, BinOpInt::Eq) => Instr::I128_Eq,
-            (16, BinOpInt::NotEq) => Instr::I128_NotEq,
-            (16, BinOpInt::S_Div) => Instr::I128_S_Div,
-            (16, BinOpInt::S_Rem) => Instr::I128_S_Rem,
-            (16, BinOpInt::S_ShiftR) => Instr::I128_S_ShiftR,
-            (16, BinOpInt::S_Lt) => Instr::I128_S_Lt,
-            (16, BinOpInt::S_LtEq) => Instr::I128_S_LtEq,
-            (16, BinOpInt::U_Div) => Instr::I128_U_Div,
-            (16, BinOpInt::U_Rem) => Instr::I128_U_Rem,
-            (16, BinOpInt::U_ShiftR) => Instr::I128_U_ShiftR,
-            (16, BinOpInt::U_Lt) => Instr::I128_U_Lt,
-            (16, BinOpInt::U_LtEq) => Instr::I128_U_LtEq,
-
-            _ => panic!("binop nyi {} {:?}", width, op),
-        };
-
-        (instr, flag)
-    } else if arg_ty.is_float() {
+            let instr = match (width, op) {
+                (1, BinOpInt::Add) => Instr::I8_Add,
+                (1, BinOpInt::Sub) => Instr::I8_Sub,
+                (1, BinOpInt::Mul) => Instr::I8_Mul,
+                (1, BinOpInt::Or) => Instr::I8_Or,
+                (1, BinOpInt::And) => Instr::I8_And,
+                (1, BinOpInt::Xor) => Instr::I8_Xor,
+                (1, BinOpInt::ShiftL) => Instr::I8_ShiftL,
+                (1, BinOpInt::Eq) => Instr::I8_Eq,
+                (1, BinOpInt::NotEq) => Instr::I8_NotEq,
+                (1, BinOpInt::S_Div) => Instr::I8_S_Div,
+                (1, BinOpInt::S_Rem) => Instr::I8_S_Rem,
+                (1, BinOpInt::S_ShiftR) => Instr::I8_S_ShiftR,
+                (1, BinOpInt::S_Lt) => Instr::I8_S_Lt,
+                (1, BinOpInt::S_LtEq) => Instr::I8_S_LtEq,
+                (1, BinOpInt::U_Div) => Instr::I8_U_Div,
+                (1, BinOpInt::U_Rem) => Instr::I8_U_Rem,
+                (1, BinOpInt::U_ShiftR) => Instr::I8_U_ShiftR,
+                (1, BinOpInt::U_Lt) => Instr::I8_U_Lt,
+                (1, BinOpInt::U_LtEq) => Instr::I8_U_LtEq,
+    
+                (2, BinOpInt::Add) => Instr::I16_Add,
+                (2, BinOpInt::Sub) => Instr::I16_Sub,
+                (2, BinOpInt::Mul) => Instr::I16_Mul,
+                (2, BinOpInt::Or) => Instr::I16_Or,
+                (2, BinOpInt::And) => Instr::I16_And,
+                (2, BinOpInt::Xor) => Instr::I16_Xor,
+                (2, BinOpInt::ShiftL) => Instr::I16_ShiftL,
+                (2, BinOpInt::Eq) => Instr::I16_Eq,
+                (2, BinOpInt::NotEq) => Instr::I16_NotEq,
+                (2, BinOpInt::S_Div) => Instr::I16_S_Div,
+                (2, BinOpInt::S_Rem) => Instr::I16_S_Rem,
+                (2, BinOpInt::S_ShiftR) => Instr::I16_S_ShiftR,
+                (2, BinOpInt::S_Lt) => Instr::I16_S_Lt,
+                (2, BinOpInt::S_LtEq) => Instr::I16_S_LtEq,
+                (2, BinOpInt::U_Div) => Instr::I16_U_Div,
+                (2, BinOpInt::U_Rem) => Instr::I16_U_Rem,
+                (2, BinOpInt::U_ShiftR) => Instr::I16_U_ShiftR,
+                (2, BinOpInt::U_Lt) => Instr::I16_U_Lt,
+                (2, BinOpInt::U_LtEq) => Instr::I16_U_LtEq,
+    
+                (4, BinOpInt::Add) => Instr::I32_Add,
+                (4, BinOpInt::Sub) => Instr::I32_Sub,
+                (4, BinOpInt::Mul) => Instr::I32_Mul,
+                (4, BinOpInt::Or) => Instr::I32_Or,
+                (4, BinOpInt::And) => Instr::I32_And,
+                (4, BinOpInt::Xor) => Instr::I32_Xor,
+                (4, BinOpInt::ShiftL) => Instr::I32_ShiftL,
+                (4, BinOpInt::Eq) => Instr::I32_Eq,
+                (4, BinOpInt::NotEq) => Instr::I32_NotEq,
+                (4, BinOpInt::S_Div) => Instr::I32_S_Div,
+                (4, BinOpInt::S_Rem) => Instr::I32_S_Rem,
+                (4, BinOpInt::S_ShiftR) => Instr::I32_S_ShiftR,
+                (4, BinOpInt::S_Lt) => Instr::I32_S_Lt,
+                (4, BinOpInt::S_LtEq) => Instr::I32_S_LtEq,
+                (4, BinOpInt::U_Div) => Instr::I32_U_Div,
+                (4, BinOpInt::U_Rem) => Instr::I32_U_Rem,
+                (4, BinOpInt::U_ShiftR) => Instr::I32_U_ShiftR,
+                (4, BinOpInt::U_Lt) => Instr::I32_U_Lt,
+                (4, BinOpInt::U_LtEq) => Instr::I32_U_LtEq,
+    
+                (8, BinOpInt::Add) => Instr::I64_Add,
+                (8, BinOpInt::Sub) => Instr::I64_Sub,
+                (8, BinOpInt::Mul) => Instr::I64_Mul,
+                (8, BinOpInt::Or) => Instr::I64_Or,
+                (8, BinOpInt::And) => Instr::I64_And,
+                (8, BinOpInt::Xor) => Instr::I64_Xor,
+                (8, BinOpInt::ShiftL) => Instr::I64_ShiftL,
+                (8, BinOpInt::Eq) => Instr::I64_Eq,
+                (8, BinOpInt::NotEq) => Instr::I64_NotEq,
+                (8, BinOpInt::S_Div) => Instr::I64_S_Div,
+                (8, BinOpInt::S_Rem) => Instr::I64_S_Rem,
+                (8, BinOpInt::S_ShiftR) => Instr::I64_S_ShiftR,
+                (8, BinOpInt::S_Lt) => Instr::I64_S_Lt,
+                (8, BinOpInt::S_LtEq) => Instr::I64_S_LtEq,
+                (8, BinOpInt::U_Div) => Instr::I64_U_Div,
+                (8, BinOpInt::U_Rem) => Instr::I64_U_Rem,
+                (8, BinOpInt::U_ShiftR) => Instr::I64_U_ShiftR,
+                (8, BinOpInt::U_Lt) => Instr::I64_U_Lt,
+                (8, BinOpInt::U_LtEq) => Instr::I64_U_LtEq,
+    
+                (16, BinOpInt::Add) => Instr::I128_Add,
+                (16, BinOpInt::Sub) => Instr::I128_Sub,
+                (16, BinOpInt::Mul) => Instr::I128_Mul,
+                (16, BinOpInt::Or) => Instr::I128_Or,
+                (16, BinOpInt::And) => Instr::I128_And,
+                (16, BinOpInt::Xor) => Instr::I128_Xor,
+                (16, BinOpInt::ShiftL) => Instr::I128_ShiftL,
+                (16, BinOpInt::Eq) => Instr::I128_Eq,
+                (16, BinOpInt::NotEq) => Instr::I128_NotEq,
+                (16, BinOpInt::S_Div) => Instr::I128_S_Div,
+                (16, BinOpInt::S_Rem) => Instr::I128_S_Rem,
+                (16, BinOpInt::S_ShiftR) => Instr::I128_S_ShiftR,
+                (16, BinOpInt::S_Lt) => Instr::I128_S_Lt,
+                (16, BinOpInt::S_LtEq) => Instr::I128_S_LtEq,
+                (16, BinOpInt::U_Div) => Instr::I128_U_Div,
+                (16, BinOpInt::U_Rem) => Instr::I128_U_Rem,
+                (16, BinOpInt::U_ShiftR) => Instr::I128_U_ShiftR,
+                (16, BinOpInt::U_Lt) => Instr::I128_U_Lt,
+                (16, BinOpInt::U_LtEq) => Instr::I128_U_LtEq,
+    
+                _ => panic!("binop nyi {} {:?}", width, op),
+            };
+    
+            (instr, flag)
+        },
+        _ => panic!("todo binop {:?}",arg_ty)
+    }
+    
+    /*} else if arg_ty.is_float() {
         let (op, flag) = bin_op_float(op);
         let instr = match (arg_ty, op) {
             (Type::Float(FloatType::F64), BinOpFloat::Add) => Instr::F64_Add,
@@ -365,33 +371,32 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: Type) -> (fn(u32, u32, u32) -> Instr
         (instr, flag)
     } else {
         panic!("todo more bin ops");
-    }
+    }*/
 }
 
 fn instr_for_un_op(op: syn::UnOp, ty: &GlobalType) -> fn(u32, u32) -> Instr {
     match (op,&ty.kind) {
+        // integer operations
+        (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::Int128,_)))) => Instr::I128_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::Int128,_)))) => Instr::I128_Not,
+        (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::Int64,_)))) => Instr::I64_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::Int64,_)))) => Instr::I64_Not,
         (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::Int32,_)))) => Instr::I32_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::Int32,_)))) => Instr::I32_Not,
+        (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::Int16,_)))) => Instr::I16_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::Int16,_)))) => Instr::I16_Not,
+        (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::Int8,_)))) => Instr::I8_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::Int8,_)))) => Instr::I8_Not,
+        // isize
+        (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::IntSize,_)))) => Instr::I64_Neg,
+        (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::IntSize,_)))) => Instr::I64_Not,
+
+        (syn::UnOp::Not(_),TypeKind::Bool) => Instr::Bool_Not,
+
+        
         _ => panic!("todo un-op {:?} {:?}",op,ty)
     }
-    /*if ty.is_int() {
-        let width = ty.byte_size();
-        match (op, width) {
-            (syn::UnOp::Neg(_), 1) => Instr::I8_Neg,
-            (syn::UnOp::Not(_), 1) => Instr::I8_Not,
-
-            (syn::UnOp::Neg(_), 2) => Instr::I16_Neg,
-            (syn::UnOp::Not(_), 2) => Instr::I16_Not,
-
-            (syn::UnOp::Neg(_), 4) => Instr::I32_Neg,
-            (syn::UnOp::Not(_), 4) => Instr::I32_Not,
-
-            (syn::UnOp::Neg(_), 8) => Instr::I64_Neg,
-            (syn::UnOp::Not(_), 8) => Instr::I64_Not,
-
-            (syn::UnOp::Neg(_), 16) => Instr::I128_Neg,
-            (syn::UnOp::Not(_), 16) => Instr::I128_Not,
-            _ => panic!("todo un-op int {:?} {:?}", op, ty),
-        }
+    /*
     } else if ty.is_float() {
         match (op, ty) {
             (syn::UnOp::Neg(_), Type::Float(FloatType::F64)) => Instr::F64_Neg,
@@ -680,7 +685,10 @@ impl<'a> BCompiler<'a> {
                     None
                 } else {
                     match (&src_kind,&res_kind) {
-                        (TypeKind::Int(_),TypeKind::Int(_)) => {
+                        (TypeKind::Int(_),TypeKind::Int(_)) |
+                        (TypeKind::Bool,TypeKind::Int(_)) |
+                        (TypeKind::Char,TypeKind::Int(_)) |
+                        (TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned))),TypeKind::Char) => {
                             let src_width = src_ty.byte_size();
                             let res_width = res_ty.byte_size();
 
@@ -938,22 +946,20 @@ impl<'a> BCompiler<'a> {
                     self.lower_expr(*src, mandatory_dest_slot)
                 }*/
             }
-            Expr::BinOpPrimitive(lhs, op, rhs) => {
-                panic!("prim bin-op");
-                /*let arg_ty = self.input_fn.exprs[*lhs as usize].ty;
-                let arg_ty = panic!("todo type");
+            Expr::BinOp(lhs, op, rhs) => {
+                let arg_ty = self.input_fn.exprs[*lhs as usize].ty.clone();
 
                 match op {
                     syn::BinOp::And(_) => {
-                        return self.lower_lazy_logic(true, *lhs, *rhs, mandatory_dest_slot)
+                        return self.lower_lazy_logic(true, *lhs, *rhs, mandatory_dest_slot);
                     }
                     syn::BinOp::Or(_) => {
-                        return self.lower_lazy_logic(false, *lhs, *rhs, mandatory_dest_slot)
+                        return self.lower_lazy_logic(false, *lhs, *rhs, mandatory_dest_slot);
                     }
                     _ => (),
                 }
 
-                let (ins_ctor, flag) = instr_for_bin_op(*op, arg_ty);
+                let (ins_ctor, flag) = instr_for_bin_op(*op, &arg_ty);
 
                 if flag == BinOpFlag::Assign {
                     // ignore mandatory_dest_slot -- our result is always void
@@ -963,18 +969,17 @@ impl<'a> BCompiler<'a> {
                         let ins = ins_ctor(l_slot, l_slot, r_slot);
                         self.push_code(ins);
                     } else {
-                        let tmp_slot =
-                            mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(arg_ty));
+                        let tmp_slot =self.frame.alloc(&arg_ty);
                         let ptr_slot = self.get_place_addr(*lhs, None);
 
                         // move value to stack
-                        self.insert_move_sp(tmp_slot, ptr_slot, arg_ty);
+                        self.insert_move_sp(tmp_slot, ptr_slot, &arg_ty);
 
                         let ins = ins_ctor(tmp_slot, tmp_slot, r_slot);
                         self.push_code(ins);
 
                         // move value back to ptr
-                        self.insert_move_ps(ptr_slot, tmp_slot, arg_ty);
+                        self.insert_move_ps(ptr_slot, tmp_slot, &arg_ty);
                     }
                     self.frame = saved_frame; // all done, reset stack
 
@@ -994,7 +999,7 @@ impl<'a> BCompiler<'a> {
                     };
                     self.push_code(ins);
                     dest_slot
-                }*/
+                }
             }
             Expr::UnOp(arg, op) => {
                 let ins_ctor = instr_for_un_op(*op, &ty);

@@ -28,13 +28,27 @@ pub enum IntSign {
 fn convert_legacy_ty(ty: &Type) -> TypeKind {
     match ty {
 
+        Type::Int(IntType::I8) => TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed))),
+        Type::Int(IntType::U8) => TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned))),
+
+        Type::Int(IntType::I16) => TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed))),
+        Type::Int(IntType::U16) => TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned))),
+
         Type::Int(IntType::I32) => TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed))),
         Type::Int(IntType::U32) => TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned))),
+
+        Type::Int(IntType::I64) => TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed))),
+        Type::Int(IntType::U64) => TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned))),
 
         Type::Int(IntType::I128) => TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed))),
         Type::Int(IntType::U128) => TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned))),
 
+        Type::Int(IntType::ISize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Signed))),
+        Type::Int(IntType::USize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Unsigned))),
+
         Type::Bool => TypeKind::Bool,
+        Type::Char => TypeKind::Char,
+
         Type::Unknown => TypeKind::Unknown,
         Type::Void => TypeKind::Tuple,
         _ => panic!("todo convert {:?}",ty)
@@ -45,9 +59,10 @@ fn convert_legacy_ty(ty: &Type) -> TypeKind {
 pub enum TypeKind {
     Unknown,
     Never,
-    Tuple,
+    Tuple, // used for '()' / void
     Int(Option<(IntWidth,IntSign)>),
-    Bool
+    Bool,
+    Char
 }
 
 impl TypeKind {
@@ -143,8 +158,15 @@ impl GlobalType {
     pub fn byte_size(&self) -> usize {
         match self.kind {
             TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
+            TypeKind::Int(Some((IntWidth::Int8,_))) => 1,
+            TypeKind::Int(Some((IntWidth::Int16,_))) => 2,
             TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
+            TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
             TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
+
+            TypeKind::Bool => 1,
+            TypeKind::Char => 4,
+
             TypeKind::Tuple => {
                 assert!(self.args.is_none());
                 0
@@ -156,13 +178,28 @@ impl GlobalType {
     pub fn byte_align(&self) -> usize {
         match self.kind {
             TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
+            TypeKind::Int(Some((IntWidth::Int8,_))) => 1,
+            TypeKind::Int(Some((IntWidth::Int16,_))) => 2,
             TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
+            TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
             TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
+
+            TypeKind::Bool => 1,
+            TypeKind::Char => 4,
+            
             TypeKind::Tuple => {
                 assert!(self.args.is_none());
                 1
             },
             _ => panic!("todo align {:?}",self.kind)
+        }
+    }
+
+    pub fn is_signed(&self) -> bool {
+        if let TypeKind::Int(Some((_,IntSign::Signed))) = self.kind {
+            true
+        } else {
+            false
         }
     }
 }
@@ -331,10 +368,13 @@ impl FuncTypes {
                 self.new_var(kind)
             }
             Expr::LitInt(_,ty) => {
-                if *ty != Type::IntUnknown {
-                    panic!("todo");
-                }
-                self.new_var(TypeKind::Int(None))
+                self.new_var(TypeKind::Int(*ty))
+            }
+            Expr::LitBool(_) => {
+                self.new_var(TypeKind::Bool)
+            }
+            Expr::LitChar(_) => {
+                self.new_var(TypeKind::Char)
             }
             Expr::Block(block) => {
                 let block_var = self.new_var(TypeKind::Unknown);
@@ -409,9 +449,30 @@ impl FuncTypes {
     }
 
     pub fn solve(&mut self) {
-        if self.constraints.len() > 0 {
+        let constraints = std::mem::take(&mut self.constraints);
+        for c in constraints {
+            let sat = match &c {
+                TypeConstraint::Equal(var1, var2) => self.solve_equal(*var1,*var2),
+                TypeConstraint::EqualLit(var, ty) => {
+
+                    let lt = &mut self.var_types[var.0 as usize];
+
+                    lt.unify_g(&ty);
+            
+                    lt.kind.is_known()
+                }
+                TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
+                TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
+                //_ => panic!("todo solve {:?}",c)
+            };
+            if sat {
+                self.constraints_sat.push(c);
+            } else {
+                self.constraints.push(c);
+            }
+        }
+        /*if self.constraints.len() > 0 {
             let mut i = 0;
-            println!("infer start {}",self.constraints.len());
 
             while i < self.constraints.len() {
 
@@ -442,9 +503,7 @@ impl FuncTypes {
                     i += 1;
                 }
             }
-
-            println!("infer finish {}",self.constraints.len());
-        }
+        }*/
     }
 
     fn get_mut_2(&mut self, var1: TypeVar, var2: TypeVar) -> (&mut LocalType, &mut LocalType) {
@@ -499,7 +558,6 @@ impl FuncTypes {
         if t1 != t2 {
             t1.unify(t2);
         }
-        println!("? {:?}",t1);
 
         t1.kind.is_known()
     }
@@ -533,15 +591,27 @@ impl FuncTypes {
             OpBinary::Eq | OpBinary::Ord |
             OpBinary::AddEq | OpBinary::SubEq | OpBinary::MulEq | OpBinary::DivEq | OpBinary::RemEq |
             OpBinary::BitAndEq | OpBinary::BitOrEq | OpBinary::BitXorEq => {
-                let (lhs,rhs) = self.get_mut_2(lhs, rhs);
-                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
-                    if lhs != rhs {
-                        lhs.unify(rhs);
+                if lhs == rhs {
+                    // same variable, requires special handling:
+                    let arg = &mut self.var_types[lhs.0 as usize];
+                    if arg.kind.is_op_prim() {
+                        // lhs and rhs are already unified: good
+                        true
+                    } else {
+                        // todo trait lookup
+                        false
                     }
-                    lhs.kind.is_known()
                 } else {
-                    // todo trait lookup
-                    false
+                    let (lhs,rhs) = self.get_mut_2(lhs, rhs);
+                    if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                        if lhs != rhs {
+                            lhs.unify(rhs);
+                        }
+                        lhs.kind.is_known()
+                    } else {
+                        // todo trait lookup
+                        false
+                    }
                 }
             }
             OpBinary::ShiftL | OpBinary::ShiftR => {
@@ -560,24 +630,46 @@ impl FuncTypes {
             }
             OpBinary::Add | OpBinary::Sub | OpBinary::Mul | OpBinary::Div | OpBinary::Rem |
             OpBinary::BitAnd | OpBinary::BitOr | OpBinary::BitXor => {
-                let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
-                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
-                    if lhs != rhs {
-                        lhs.unify(rhs);
+                if lhs == rhs {
+                    // same variable, requires special handling:
+                    let (arg,res) = self.get_mut_2(lhs,res);
+                    if arg.kind.is_op_prim() {
+                        if arg != res {
+                            arg.unify(res);
+                        }
+                        arg.kind.is_known()
+                    } else {
+                        // todo trait lookup
+                        false
                     }
-                    if lhs != res {
-                        lhs.unify(res);
-                    }
-                    if rhs != res {
-                        rhs.unify(res);
-                    }
-                    lhs.kind.is_known()
                 } else {
-                    // todo trait lookup
-                    false
+                    let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
+                    if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                        if lhs != rhs {
+                            lhs.unify(rhs);
+                        }
+                        if lhs != res {
+                            lhs.unify(res);
+                        }
+                        if rhs != res {
+                            rhs.unify(res);
+                        }
+                        lhs.kind.is_known()
+                    } else {
+                        // todo trait lookup
+                        false
+                    }
                 }
             }
             _ => panic!("? {:?}",op)
+        }
+    }
+
+    pub fn fix_unknown_primitives(&mut self) {
+        for ty in &mut self.var_types {
+            if let TypeKind::Int(None) = ty.kind {
+                ty.kind = TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed)));
+            }
         }
     }
 
@@ -586,5 +678,9 @@ impl FuncTypes {
         for (expr,var) in func.exprs.iter_mut().zip(self.expr_vars.iter()) {
             expr.ty = self.get_global(*var);
         }
+    }
+
+    pub fn constraint_count(&self) -> usize {
+        self.constraints.len()
     }
 }

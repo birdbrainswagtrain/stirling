@@ -1,6 +1,6 @@
 use crate::profiler::profile;
 
-use super::infer::{FuncTypes, TypeKind, GlobalType};
+use super::infer::{FuncTypes, TypeKind, GlobalType, IntWidth, IntSign};
 use super::item::{Function, Item, ItemName, Scope};
 use super::types::{Signature, Type};
 
@@ -72,14 +72,25 @@ impl FuncHIR {
             panic!("bad temporary detected");
         }
 
-        let mut types = FuncTypes::new(&mut code);
-        println!("1");
-        types.solve();
-        println!("2");
-        types.solve();
-        println!("3");
-        types.solve();
-        types.apply_types(&mut code);
+        let mut types = profile("type infer / setup",||{
+            FuncTypes::new(&mut code)
+        });
+
+        profile("type infer / solve",||{
+            //println!("pre-solve: {}",types.constraint_count());
+            for i in 1..10 {
+                types.solve();
+    
+                let count = types.constraint_count();
+                //println!("solve {}: {}",i,count);
+                if count == 0 {
+                    break;
+                }
+            }
+    
+            types.fix_unknown_primitives();
+            types.apply_types(&mut code);
+        });
 
         //profile("type infer", || code.infer_types());
         //panic!("todo type check");
@@ -332,12 +343,19 @@ impl Block {
                 syn::Lit::Int(int) => {
                     let n: u128 = int.base10_parse().unwrap();
                     let suffix = int.suffix();
+
                     let ty = if suffix.len() != 0 {
-                        Type::from_str(suffix).unwrap()
+                        match suffix {
+                            "u8" => Some((IntWidth::Int8,IntSign::Unsigned)),
+
+
+                            "i8" => Some((IntWidth::Int8,IntSign::Signed)),
+                            "i16" => Some((IntWidth::Int16,IntSign::Signed)),
+                            _ => panic!("bad suffix {:?}",suffix)
+                        }
                     } else {
-                        Type::IntUnknown
+                        None
                     };
-                    assert!(ty.is_int());
                     code.push_expr(Expr::LitInt(n,ty))
                 }
                 syn::Lit::Float(float) => {
@@ -475,7 +493,7 @@ pub enum Expr {
     Ref(u32, bool), // 2nd value indicates mutability
     DeRef(u32),
     IndexTuple(u32, u32), // 2nd value indicates index
-    LitInt(u128,Type),
+    LitInt(u128,Option<(IntWidth,IntSign)>),
     LitFloat(f64,Type),
     LitBool(bool),
     LitChar(char),
