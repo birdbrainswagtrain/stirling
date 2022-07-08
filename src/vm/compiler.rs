@@ -3,7 +3,7 @@ use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
         item::Function,
-        types::{CompoundType, FloatType, IntType, Type}, infer::{GlobalType, IntWidth, IntSign},
+        types::{CompoundType, FloatType, IntType, Type}, infer::{GlobalType, IntWidth, IntSign, FloatWidth},
     },
     is_verbose,
     profiler::profile,
@@ -336,6 +336,38 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: &GlobalType) -> (fn(u32, u32, u32) -
     
             (instr, flag)
         },
+        TypeKind::Float(_) => {
+            let (op, flag) = bin_op_float(op);
+            let instr = match (&arg_ty.kind, op) {
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Add) => Instr::F32_Add,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Sub) => Instr::F32_Sub,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Mul) => Instr::F32_Mul,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Div) => Instr::F32_Div,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Rem) => Instr::F32_Rem,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Eq) => Instr::F32_Eq,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::NotEq) => Instr::F32_NotEq,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Lt) => Instr::F32_Lt,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::LtEq) => Instr::F32_LtEq,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::Gt) => Instr::F32_Gt,
+                (TypeKind::Float(Some(FloatWidth::Float32)), BinOpFloat::GtEq) => Instr::F32_GtEq,
+
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Add) => Instr::F64_Add,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Sub) => Instr::F64_Sub,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Mul) => Instr::F64_Mul,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Div) => Instr::F64_Div,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Rem) => Instr::F64_Rem,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Eq) => Instr::F64_Eq,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::NotEq) => Instr::F64_NotEq,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Lt) => Instr::F64_Lt,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::LtEq) => Instr::F64_LtEq,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::Gt) => Instr::F64_Gt,
+                (TypeKind::Float(Some(FloatWidth::Float64)), BinOpFloat::GtEq) => Instr::F64_GtEq,
+
+                _ => panic!("binop nyi {:?} {:?}", arg_ty, op)
+            };
+
+            (instr,flag)
+        }
         _ => panic!("todo binop {:?}",arg_ty)
     }
     
@@ -390,6 +422,9 @@ fn instr_for_un_op(op: syn::UnOp, ty: &GlobalType) -> fn(u32, u32) -> Instr {
         // isize
         (syn::UnOp::Neg(_),TypeKind::Int(Some((IntWidth::IntSize,_)))) => Instr::I64_Neg,
         (syn::UnOp::Not(_),TypeKind::Int(Some((IntWidth::IntSize,_)))) => Instr::I64_Not,
+
+        (syn::UnOp::Neg(_),TypeKind::Float(Some(FloatWidth::Float32))) => Instr::F32_Neg,
+        (syn::UnOp::Neg(_),TypeKind::Float(Some(FloatWidth::Float64))) => Instr::F64_Neg,
 
         (syn::UnOp::Not(_),TypeKind::Bool) => Instr::Bool_Not,
 
@@ -659,20 +694,19 @@ impl<'a> BCompiler<'a> {
                 dest_slot
             }
             Expr::LitFloat(n,_) => {
-                panic!("todo float")
-                /*let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
+                let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
 
-                match ty {
-                    Type::Float(FloatType::F64) => {
+                match ty.kind {
+                    TypeKind::Float(Some(FloatWidth::Float64)) => {
                         self.push_code(Instr::F64_Const(dest_slot, *n as f64))
                     }
-                    Type::Float(FloatType::F32) => {
+                    TypeKind::Float(Some(FloatWidth::Float32)) => {
                         self.push_code(Instr::F32_Const(dest_slot, *n as f32))
                     }
                     _ => panic!("todo more literal floats"),
                 }
 
-                dest_slot*/
+                dest_slot
             }
             Expr::CastPrimitive(src,_) => {
                 let src_ty = self.input_fn.exprs[*src as usize].ty.clone();
@@ -729,6 +763,9 @@ impl<'a> BCompiler<'a> {
                             } else {
                                 None
                             }
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)),TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_F32)
                         }
                         _ => {
                             println!(">> {:?} {:?}",src_kind,res_kind);

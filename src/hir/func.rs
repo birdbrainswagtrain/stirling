@@ -1,6 +1,6 @@
 use crate::profiler::profile;
 
-use super::infer::{FuncTypes, TypeKind, GlobalType, IntWidth, IntSign};
+use super::infer::{FuncTypes, TypeKind, GlobalType, IntWidth, IntSign, FloatWidth};
 use super::item::{Function, Item, ItemName, Scope};
 use super::types::{Signature, Type};
 
@@ -362,11 +362,14 @@ impl Block {
                     let n: f64 = float.base10_parse().unwrap();
                     let suffix = float.suffix();
                     let ty = if suffix.len() != 0 {
-                        Type::from_str(suffix).unwrap()
+                        match suffix {
+                            "f32" => Some(FloatWidth::Float32),
+                            "f64" => Some(FloatWidth::Float64),
+                            _ => panic!("bad suffix {:?}",suffix)
+                        }
                     } else {
-                        Type::FloatUnknown
+                        None
                     };
-                    assert!(ty.is_float());
                     code.push_expr(Expr::LitFloat(n,ty))
                 }
                 syn::Lit::Bool(syn::LitBool { value, .. }) => {
@@ -494,7 +497,7 @@ pub enum Expr {
     DeRef(u32),
     IndexTuple(u32, u32), // 2nd value indicates index
     LitInt(u128,Option<(IntWidth,IntSign)>),
-    LitFloat(f64,Type),
+    LitFloat(f64,Option<FloatWidth>),
     LitBool(bool),
     LitChar(char),
     LitVoid,

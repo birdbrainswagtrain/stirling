@@ -4,7 +4,7 @@ use syn::{BinOp, UnOp};
 
 use crate::builtin::BUILTINS;
 
-use super::{func::{Block, Expr, FuncHIR, ExprInfo}, types::{Type, IntType}};
+use super::{func::{Block, Expr, FuncHIR, ExprInfo}, types::{Type, IntType, FloatType}};
 
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub struct TypeVar(u32);
@@ -17,6 +17,12 @@ pub enum IntWidth {
     Int64,
     Int128,
     IntSize
+}
+
+#[derive(Debug,Clone,Copy,PartialEq)]
+pub enum FloatWidth {
+    Float32,
+    Float64
 }
 
 #[derive(Debug,Clone,Copy,PartialEq)]
@@ -46,6 +52,9 @@ fn convert_legacy_ty(ty: &Type) -> TypeKind {
         Type::Int(IntType::ISize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Signed))),
         Type::Int(IntType::USize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Unsigned))),
 
+        Type::Float(FloatType::F32) => TypeKind::Float(Some(FloatWidth::Float32)),
+        Type::Float(FloatType::F64) => TypeKind::Float(Some(FloatWidth::Float64)),
+
         Type::Bool => TypeKind::Bool,
         Type::Char => TypeKind::Char,
 
@@ -61,6 +70,7 @@ pub enum TypeKind {
     Never,
     Tuple, // used for '()' / void
     Int(Option<(IntWidth,IntSign)>),
+    Float(Option<FloatWidth>),
     Bool,
     Char
 }
@@ -72,7 +82,7 @@ impl TypeKind {
 
     fn is_known(&self) -> bool {
         match self {
-            TypeKind::Unknown | TypeKind::Int(None) => false,
+            TypeKind::Unknown | TypeKind::Int(None) | TypeKind::Float(None) => false,
             _ => true
         }
     }
@@ -80,7 +90,7 @@ impl TypeKind {
     /// Is the type a primitive for the purposes of operator inference?
     fn is_op_prim(&self) -> bool {
         match self {
-            TypeKind::Bool | TypeKind::Int(_) => true,
+            TypeKind::Bool | TypeKind::Int(_) | TypeKind::Float(_) => true,
             _ => false
         }
     }
@@ -134,6 +144,9 @@ impl LocalType {
             (TypeKind::Int(Some(_)),TypeKind::Int(None)) => UnifyResult::A,
             (TypeKind::Int(None),TypeKind::Int(Some(_))) => UnifyResult::B,
 
+            (TypeKind::Float(Some(_)),TypeKind::Float(None)) => UnifyResult::A,
+            (TypeKind::Float(None),TypeKind::Float(Some(_))) => UnifyResult::B,
+
             _ => panic!("todo unify kinds {:?} {:?}",a,b)
         }
     }
@@ -164,6 +177,9 @@ impl GlobalType {
             TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
             TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
 
+            TypeKind::Float(Some(FloatWidth::Float32)) => 4,
+            TypeKind::Float(Some(FloatWidth::Float64)) => 8,
+
             TypeKind::Bool => 1,
             TypeKind::Char => 4,
 
@@ -184,9 +200,12 @@ impl GlobalType {
             TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
             TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
 
+            TypeKind::Float(Some(FloatWidth::Float32)) => 4,
+            TypeKind::Float(Some(FloatWidth::Float64)) => 8,
+
             TypeKind::Bool => 1,
             TypeKind::Char => 4,
-            
+
             TypeKind::Tuple => {
                 assert!(self.args.is_none());
                 1
@@ -370,6 +389,9 @@ impl FuncTypes {
             Expr::LitInt(_,ty) => {
                 self.new_var(TypeKind::Int(*ty))
             }
+            Expr::LitFloat(_,ty) => {
+                self.new_var(TypeKind::Float(*ty))
+            }
             Expr::LitBool(_) => {
                 self.new_var(TypeKind::Bool)
             }
@@ -506,6 +528,11 @@ impl FuncTypes {
         }*/
     }
 
+    fn get(&self, var: TypeVar) -> &LocalType {
+        let var = var.0 as usize;
+        &self.var_types[var]
+    }
+
     fn get_mut_2(&mut self, var1: TypeVar, var2: TypeVar) -> (&mut LocalType, &mut LocalType) {
         let var1 = var1.0 as isize;
         let var2 = var2.0 as isize;
@@ -553,6 +580,11 @@ impl FuncTypes {
     }
 
     fn solve_equal(&mut self, var1: TypeVar, var2: TypeVar) -> bool {
+        if var1 == var2 {
+            return true;
+            //return self.get(var1).kind.is_known();
+        }
+
         let (t1,t2) = self.get_mut_2(var1, var2);
 
         if t1 != t2 {
@@ -562,14 +594,9 @@ impl FuncTypes {
         t1.kind.is_known()
     }
 
-    fn solve_unary(&mut self, op: OpUnary, res: TypeVar, arg: TypeVar) -> bool {
-        let (arg,res) = self.get_mut_2(arg, res);
-
-        if arg.kind.is_op_prim() {
-            if arg != res {
-                arg.unify(res);
-            }
-            arg.kind.is_known()
+    fn solve_unary(&mut self, _op: OpUnary, res: TypeVar, arg: TypeVar) -> bool {
+        if self.get(arg).kind.is_op_prim() {
+            self.solve_equal(arg, res)
         } else {
             // TODO TRAIT?
             false
@@ -579,8 +606,7 @@ impl FuncTypes {
     fn solve_binary(&mut self, op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar) -> bool {
         match op {
             OpBinary::ShiftLEq | OpBinary::ShiftREq => {
-                let (lhs,rhs) = self.get_mut_2(lhs, rhs);
-                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
                     // not much we can do
                     true
                 } else {
@@ -591,38 +617,19 @@ impl FuncTypes {
             OpBinary::Eq | OpBinary::Ord |
             OpBinary::AddEq | OpBinary::SubEq | OpBinary::MulEq | OpBinary::DivEq | OpBinary::RemEq |
             OpBinary::BitAndEq | OpBinary::BitOrEq | OpBinary::BitXorEq => {
-                if lhs == rhs {
-                    // same variable, requires special handling:
-                    let arg = &mut self.var_types[lhs.0 as usize];
-                    if arg.kind.is_op_prim() {
-                        // lhs and rhs are already unified: good
-                        true
-                    } else {
-                        // todo trait lookup
-                        false
-                    }
+                if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
+                    self.solve_equal(lhs, rhs)
                 } else {
-                    let (lhs,rhs) = self.get_mut_2(lhs, rhs);
-                    if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
-                        if lhs != rhs {
-                            lhs.unify(rhs);
-                        }
-                        lhs.kind.is_known()
-                    } else {
-                        // todo trait lookup
-                        false
-                    }
+                    // todo trait lookup
+                    false
                 }
             }
             OpBinary::ShiftL | OpBinary::ShiftR => {
-                let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
+                //let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
 
-                if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
+                if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
                     // lhs and res should match
-                    if lhs != res {
-                        lhs.unify(res);
-                    }
-                    lhs.kind.is_known()
+                    self.solve_equal(lhs, res)
                 } else {
                     // todo trait lookup
                     false
@@ -630,35 +637,17 @@ impl FuncTypes {
             }
             OpBinary::Add | OpBinary::Sub | OpBinary::Mul | OpBinary::Div | OpBinary::Rem |
             OpBinary::BitAnd | OpBinary::BitOr | OpBinary::BitXor => {
-                if lhs == rhs {
-                    // same variable, requires special handling:
-                    let (arg,res) = self.get_mut_2(lhs,res);
-                    if arg.kind.is_op_prim() {
-                        if arg != res {
-                            arg.unify(res);
-                        }
-                        arg.kind.is_known()
-                    } else {
-                        // todo trait lookup
-                        false
-                    }
+
+                //let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
+                if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
+                    self.solve_equal(lhs, rhs);
+                    self.solve_equal(rhs, res);
+                    self.solve_equal(res, lhs);
+
+                    self.get(lhs).kind.is_known()
                 } else {
-                    let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
-                    if lhs.kind.is_op_prim() && rhs.kind.is_op_prim() {
-                        if lhs != rhs {
-                            lhs.unify(rhs);
-                        }
-                        if lhs != res {
-                            lhs.unify(res);
-                        }
-                        if rhs != res {
-                            rhs.unify(res);
-                        }
-                        lhs.kind.is_known()
-                    } else {
-                        // todo trait lookup
-                        false
-                    }
+                    // todo trait lookup
+                    false
                 }
             }
             _ => panic!("? {:?}",op)
