@@ -9,14 +9,14 @@ use once_cell::sync::Lazy;
 static PROFILER_TABLE: Lazy<RwLock<HashMap<&'static str, Duration>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-pub fn profile<T: FnOnce() -> X, X>(tag: &'static str, f: T) -> X {
+pub fn profile<T: FnOnce() -> X, X>(tag: &'static str, f: T) -> (X,Duration) {
     let start = Instant::now();
     let res = f();
     let time = start.elapsed();
     let mut table = PROFILER_TABLE.write().unwrap();
     let entry = table.entry(tag).or_default();
     *entry += time;
-    res
+    (res,time)
 }
 
 pub fn profile_log() {

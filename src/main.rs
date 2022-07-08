@@ -58,11 +58,11 @@ fn main() {
 
     //let file_name = std::env::args().nth(1).expect("no file name provided");
 
-    let file_string = profile("load source", || {
+    let (file_string,_) = profile("load source", || {
         std::fs::read_to_string(&args.file_name).expect("failed to read source file")
     });
 
-    let syn_tree: syn::File = profile("parse", || {
+    let (syn_tree, _) = profile("parse", || {
         syn::parse_str(&file_string).expect("failed to parse source code")
     });
 
@@ -128,25 +128,36 @@ fn test(dir_name: &str) -> ! {
     test_files.sort();
 
     let bin_name = Path::new("/tmp/stirling_test_1");
+    let mut count_success = 0;
+    let count_total = test_files.len();
     for file in test_files {
         let res = run_test(&file, bin_name);
-        let res_str = if let Err(msg) = res {
-            format!("FAIL: {}", msg).red()
-        } else {
-            "OKAY".green()
+        let res_str: String = match res {
+            Err(msg) => format!("{}",format!("FAIL: {}", msg).red()),
+            Ok(speedup) => {
+                count_success += 1;
+                let speedup_str = if speedup > 1.0 {
+                    format!("{:.1}x faster",speedup).green()
+                } else {
+                    format!("{:.1}x slower",1.0/speedup).yellow()
+                };
+                format!("{} {}","GOOD:".green(),speedup_str)
+            }
         };
         println!("{:35} {}", file.to_str().unwrap(), res_str);
     }
+
+    println!("=> {} / {} tests passed",count_success,count_total);
 
     profile_log();
 
     std::process::exit(0)
 }
 
-fn run_test(file_name: &Path, bin_name: &Path) -> Result<(), String> {
+fn run_test(file_name: &Path, bin_name: &Path) -> Result<f64, String> {
     use std::process::Command;
     // Rust compile
-    profile("rustc compile", || {
+    let (res,compile_time) = profile("rustc compile", || {
         let fail = || Err(String::from("rustc compile failed"));
 
         let cmd_res = Command::new("rustc")
@@ -166,9 +177,11 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(), String> {
         } else {
             fail()
         }
-    })?;
+    });
 
-    let rustc_out = profile("rustc exec", || {
+    res?;
+
+    let (res,exec_time) = profile("rustc exec", || {
         let fail = || Err(String::from("rustc exec failed"));
 
         let cmd_res = Command::new(bin_name).output();
@@ -181,9 +194,11 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(), String> {
         } else {
             fail()
         }
-    })?;
+    });
 
-    let stirling_out = profile("stirling", || {
+    let rustc_out = res?;
+
+    let (res,stirling_time) = profile("stirling", || {
         let fail = || Err(String::from("stirling failed"));
 
         let program = std::env::current_exe().expect("failed to get stirling path");
@@ -199,11 +214,13 @@ fn run_test(file_name: &Path, bin_name: &Path) -> Result<(), String> {
         } else {
             fail()
         }
-    })?;
+    });
+
+    let stirling_out = res?;
 
     if rustc_out != stirling_out {
-        Err("rustc and stirling output mismatch".into())
+        Err("output mismatch".into())
     } else {
-        Ok(())
+        Ok( (compile_time + exec_time).as_secs_f64() / stirling_time.as_secs_f64() )
     }
 }

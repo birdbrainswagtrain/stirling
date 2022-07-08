@@ -72,13 +72,13 @@ impl FuncHIR {
             panic!("bad temporary detected");
         }
 
-        let mut types = profile("type infer / setup",||{
+        let (mut types,_) = profile("type infer / setup",||{
             FuncTypes::new(&mut code)
         });
 
         profile("type infer / solve",||{
             //println!("pre-solve: {}",types.constraint_count());
-            for i in 1..10 {
+            for _i in 1..10 {
                 types.solve();
     
                 let count = types.constraint_count();
@@ -347,10 +347,19 @@ impl Block {
                     let ty = if suffix.len() != 0 {
                         match suffix {
                             "u8" => Some((IntWidth::Int8,IntSign::Unsigned)),
-
+                            "u16" => Some((IntWidth::Int16,IntSign::Unsigned)),
+                            "u32" => Some((IntWidth::Int32,IntSign::Unsigned)),
+                            "u64" => Some((IntWidth::Int64,IntSign::Unsigned)),
+                            "u128" => Some((IntWidth::Int128,IntSign::Unsigned)),
+                            "usize" => Some((IntWidth::IntSize,IntSign::Unsigned)),
 
                             "i8" => Some((IntWidth::Int8,IntSign::Signed)),
                             "i16" => Some((IntWidth::Int16,IntSign::Signed)),
+                            "i32" => Some((IntWidth::Int32,IntSign::Signed)),
+                            "i64" => Some((IntWidth::Int64,IntSign::Signed)),
+                            "i128" => Some((IntWidth::Int128,IntSign::Signed)),
+                            "isize" => Some((IntWidth::IntSize,IntSign::Signed)),
+
                             _ => panic!("bad suffix {:?}",suffix)
                         }
                     } else {

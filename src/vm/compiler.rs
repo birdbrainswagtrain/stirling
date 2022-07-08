@@ -58,7 +58,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
     let sig = func.sig();
     let input_fn = func.hir();
 
-    profile("lower HIR -> BC", || {
+    let (res,_) = profile("lower HIR -> BC", || {
         let mut frame = FrameAllocator::default();
         let return_slot = frame.alloc(&GlobalType::simple(TypeKind::ptr()));
 
@@ -92,7 +92,9 @@ pub fn compile(func: &Function) -> Vec<Instr> {
         }
         assert_eq!(compiler.loop_jumps.len(), 0);
         compiler.code
-    })
+    });
+
+    res
 }
 
 struct BCompiler<'a> {
@@ -370,40 +372,6 @@ fn instr_for_bin_op(op: syn::BinOp, arg_ty: &GlobalType) -> (fn(u32, u32, u32) -
         }
         _ => panic!("todo binop {:?}",arg_ty)
     }
-    
-    /*} else if arg_ty.is_float() {
-        let (op, flag) = bin_op_float(op);
-        let instr = match (arg_ty, op) {
-            (Type::Float(FloatType::F64), BinOpFloat::Add) => Instr::F64_Add,
-            (Type::Float(FloatType::F64), BinOpFloat::Sub) => Instr::F64_Sub,
-            (Type::Float(FloatType::F64), BinOpFloat::Mul) => Instr::F64_Mul,
-            (Type::Float(FloatType::F64), BinOpFloat::Div) => Instr::F64_Div,
-            (Type::Float(FloatType::F64), BinOpFloat::Rem) => Instr::F64_Rem,
-            (Type::Float(FloatType::F64), BinOpFloat::Eq) => Instr::F64_Eq,
-            (Type::Float(FloatType::F64), BinOpFloat::NotEq) => Instr::F64_NotEq,
-            (Type::Float(FloatType::F64), BinOpFloat::Lt) => Instr::F64_Lt,
-            (Type::Float(FloatType::F64), BinOpFloat::LtEq) => Instr::F64_LtEq,
-            (Type::Float(FloatType::F64), BinOpFloat::Gt) => Instr::F64_Gt,
-            (Type::Float(FloatType::F64), BinOpFloat::GtEq) => Instr::F64_GtEq,
-
-            (Type::Float(FloatType::F32), BinOpFloat::Add) => Instr::F32_Add,
-            (Type::Float(FloatType::F32), BinOpFloat::Sub) => Instr::F32_Sub,
-            (Type::Float(FloatType::F32), BinOpFloat::Mul) => Instr::F32_Mul,
-            (Type::Float(FloatType::F32), BinOpFloat::Div) => Instr::F32_Div,
-            (Type::Float(FloatType::F32), BinOpFloat::Rem) => Instr::F32_Rem,
-            (Type::Float(FloatType::F32), BinOpFloat::Eq) => Instr::F32_Eq,
-            (Type::Float(FloatType::F32), BinOpFloat::NotEq) => Instr::F32_NotEq,
-            (Type::Float(FloatType::F32), BinOpFloat::Lt) => Instr::F32_Lt,
-            (Type::Float(FloatType::F32), BinOpFloat::LtEq) => Instr::F32_LtEq,
-            (Type::Float(FloatType::F32), BinOpFloat::Gt) => Instr::F32_Gt,
-            (Type::Float(FloatType::F32), BinOpFloat::GtEq) => Instr::F32_GtEq,
-
-            _ => panic!("binop nyi {:?} {:?}", arg_ty, op),
-        };
-        (instr, flag)
-    } else {
-        panic!("todo more bin ops");
-    }*/
 }
 
 fn instr_for_un_op(op: syn::UnOp, ty: &GlobalType) -> fn(u32, u32) -> Instr {
@@ -764,8 +732,136 @@ impl<'a> BCompiler<'a> {
                                 None
                             }
                         }
+                        // float -> float
                         (TypeKind::Float(Some(FloatWidth::Float32)),TypeKind::Float(Some(FloatWidth::Float64))) => {
                             Some(Instr::F64_From_F32)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)),TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_F64)
+                        }
+                        // int -> f32
+                        (TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I8_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I8_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I16_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I16_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I32_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I32_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I64_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I64_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I128_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float32))) => {
+                            Some(Instr::F32_From_I128_U)
+                        }
+                        // int -> f64
+                        (TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I8_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I8_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I16_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I16_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I32_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I32_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I64_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I64_U)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I128_S)
+                        }
+                        (TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned))), TypeKind::Float(Some(FloatWidth::Float64))) => {
+                            Some(Instr::F64_From_I128_U)
+                        }
+                        // f32 -> int
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed)))) => {
+                            Some(Instr::F32_Into_I8_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned)))) => {
+                            Some(Instr::F32_Into_I8_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed)))) => {
+                            Some(Instr::F32_Into_I16_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned)))) => {
+                            Some(Instr::F32_Into_I16_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed)))) => {
+                            Some(Instr::F32_Into_I32_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned)))) => {
+                            Some(Instr::F32_Into_I32_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed)))) => {
+                            Some(Instr::F32_Into_I64_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned)))) => {
+                            Some(Instr::F32_Into_I64_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed)))) => {
+                            Some(Instr::F32_Into_I128_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float32)), TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned)))) => {
+                            Some(Instr::F32_Into_I128_U)
+                        }
+                        // f64 -> int
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed)))) => {
+                            Some(Instr::F64_Into_I8_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned)))) => {
+                            Some(Instr::F64_Into_I8_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed)))) => {
+                            Some(Instr::F64_Into_I16_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned)))) => {
+                            Some(Instr::F64_Into_I16_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed)))) => {
+                            Some(Instr::F64_Into_I32_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned)))) => {
+                            Some(Instr::F64_Into_I32_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed)))) => {
+                            Some(Instr::F64_Into_I64_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned)))) => {
+                            Some(Instr::F64_Into_I64_U)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed)))) => {
+                            Some(Instr::F64_Into_I128_S)
+                        }
+                        (TypeKind::Float(Some(FloatWidth::Float64)), TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned)))) => {
+                            Some(Instr::F64_Into_I128_U)
                         }
                         _ => {
                             println!(">> {:?} {:?}",src_kind,res_kind);
@@ -785,203 +881,6 @@ impl<'a> BCompiler<'a> {
                     // no-op cast
                     self.lower_expr(*src, mandatory_dest_slot)
                 }
-
-                /*let src_ty = self.input_fn.exprs[*src as usize].ty;
-                let src_ty: Type = panic!("todo type");
-                let res_ty = ty;
-
-                let cast_ins_ctor: Option<fn(u32, u32) -> Instr> = if src_ty == *res_ty {
-                    None
-                } else if ((src_ty.is_int()
-                    || src_ty.is_ptr()
-                    || src_ty == Type::Bool
-                    || src_ty == Type::Char)
-                    && res_ty.is_int())
-                    || ((src_ty.is_int() || src_ty.is_ptr() || src_ty.is_ref()) && res_ty.is_ptr())
-                {
-                    let src_width = src_ty.byte_size();
-                    let res_width = res_ty.byte_size();
-
-                    if src_width < res_width {
-                        let signed = src_ty.is_signed();
-                        Some(match (src_width, res_width, signed) {
-                            (1, 2, true) => Instr::I16_S_Widen_8,
-                            (1, 2, false) => Instr::I16_U_Widen_8,
-
-                            (1, 4, true) => Instr::I32_S_Widen_8,
-                            (1, 4, false) => Instr::I32_U_Widen_8,
-                            (2, 4, true) => Instr::I32_S_Widen_16,
-                            (2, 4, false) => Instr::I32_U_Widen_16,
-
-                            (1, 8, true) => Instr::I64_S_Widen_8,
-                            (1, 8, false) => Instr::I64_U_Widen_8,
-                            (2, 8, true) => Instr::I64_S_Widen_16,
-                            (2, 8, false) => Instr::I64_U_Widen_16,
-                            (4, 8, true) => Instr::I64_S_Widen_32,
-                            (4, 8, false) => Instr::I64_U_Widen_32,
-
-                            (1, 16, true) => Instr::I128_S_Widen_8,
-                            (1, 16, false) => Instr::I128_U_Widen_8,
-                            (2, 16, true) => Instr::I128_S_Widen_16,
-                            (2, 16, false) => Instr::I128_U_Widen_16,
-                            (4, 16, true) => Instr::I128_S_Widen_32,
-                            (4, 16, false) => Instr::I128_U_Widen_32,
-                            (8, 16, true) => Instr::I128_S_Widen_64,
-                            (8, 16, false) => Instr::I128_U_Widen_64,
-
-                            _ => panic!("todo widen {} {} {}", src_width, res_width, signed),
-                        })
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(match (src_ty, res_ty) {
-                        (Type::Int(IntType::U8), Type::Char) => Instr::I32_U_Widen_8,
-                        (Type::Float(FloatType::F64), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_F64
-                        }
-                        (Type::Float(FloatType::F32), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_F32
-                        }
-
-                        (Type::Int(IntType::I8), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I8_S
-                        }
-                        (Type::Int(IntType::U8), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I8_U
-                        }
-                        (Type::Int(IntType::I16), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I16_S
-                        }
-                        (Type::Int(IntType::U16), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I16_U
-                        }
-                        (Type::Int(IntType::I32), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I32_S
-                        }
-                        (Type::Int(IntType::U32), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I32_U
-                        }
-                        (Type::Int(IntType::I64), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I64_S
-                        }
-                        (Type::Int(IntType::U64), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I64_U
-                        }
-                        (Type::Int(IntType::I128), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I128_S
-                        }
-                        (Type::Int(IntType::U128), Type::Float(FloatType::F32)) => {
-                            Instr::F32_From_I128_U
-                        }
-
-                        (Type::Int(IntType::I8), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I8_S
-                        }
-                        (Type::Int(IntType::U8), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I8_U
-                        }
-                        (Type::Int(IntType::I16), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I16_S
-                        }
-                        (Type::Int(IntType::U16), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I16_U
-                        }
-                        (Type::Int(IntType::I32), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I32_S
-                        }
-                        (Type::Int(IntType::U32), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I32_U
-                        }
-                        (Type::Int(IntType::I64), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I64_S
-                        }
-                        (Type::Int(IntType::U64), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I64_U
-                        }
-                        (Type::Int(IntType::I128), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I128_S
-                        }
-                        (Type::Int(IntType::U128), Type::Float(FloatType::F64)) => {
-                            Instr::F64_From_I128_U
-                        }
-
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I8)) => {
-                            Instr::F32_Into_I8_S
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U8)) => {
-                            Instr::F32_Into_I8_U
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I16)) => {
-                            Instr::F32_Into_I16_S
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U16)) => {
-                            Instr::F32_Into_I16_U
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I32)) => {
-                            Instr::F32_Into_I32_S
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U32)) => {
-                            Instr::F32_Into_I32_U
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I64)) => {
-                            Instr::F32_Into_I64_S
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U64)) => {
-                            Instr::F32_Into_I64_U
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::I128)) => {
-                            Instr::F32_Into_I128_S
-                        }
-                        (Type::Float(FloatType::F32), Type::Int(IntType::U128)) => {
-                            Instr::F32_Into_I128_U
-                        }
-
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I8)) => {
-                            Instr::F64_Into_I8_S
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U8)) => {
-                            Instr::F64_Into_I8_U
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I16)) => {
-                            Instr::F64_Into_I16_S
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U16)) => {
-                            Instr::F64_Into_I16_U
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I32)) => {
-                            Instr::F64_Into_I32_S
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U32)) => {
-                            Instr::F64_Into_I32_U
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I64)) => {
-                            Instr::F64_Into_I64_S
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U64)) => {
-                            Instr::F64_Into_I64_U
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::I128)) => {
-                            Instr::F64_Into_I128_S
-                        }
-                        (Type::Float(FloatType::F64), Type::Int(IntType::U128)) => {
-                            Instr::F64_Into_I128_U
-                        }
-
-                        _ => panic!("cast {:?} -> {:?}", src_ty, res_ty),
-                    })
-                };
-                if let Some(cast_ins_ctor) = cast_ins_ctor {
-                    let src_slot = self.lower_expr(*src, None);
-                    self.frame = saved_frame; // arg ready, reset stack
-                    let dest_slot = mandatory_dest_slot.unwrap_or_else(|| self.frame.alloc(&ty));
-                    let ins = cast_ins_ctor(dest_slot, src_slot);
-                    self.push_code(ins);
-                    dest_slot
-                } else {
-                    // no-op cast
-                    self.lower_expr(*src, mandatory_dest_slot)
-                }*/
             }
             Expr::BinOp(lhs, op, rhs) => {
                 let arg_ty = self.input_fn.exprs[*lhs as usize].ty.clone();

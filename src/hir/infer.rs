@@ -493,39 +493,6 @@ impl FuncTypes {
                 self.constraints.push(c);
             }
         }
-        /*if self.constraints.len() > 0 {
-            let mut i = 0;
-
-            while i < self.constraints.len() {
-
-                let c = &self.constraints[i];
-
-                let sat = match c {
-                    TypeConstraint::Equal(var1, var2) => self.solve_equal(*var1,*var2),
-                    TypeConstraint::EqualLit(var, ty) => {
-
-                        let lt = &mut self.var_types[var.0 as usize];
-
-                        lt.unify_g(&ty);
-                
-                        lt.kind.is_known()
-                    }
-                    TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
-                    TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
-                    _ => panic!("todo solve {:?}",c)
-                };
-
-                if sat {
-                    if i == self.constraints.len() - 1 {
-                        self.constraints.pop().unwrap();
-                    } else {
-                        self.constraints[i] = self.constraints.pop().unwrap();
-                    }
-                } else {
-                    i += 1;
-                }
-            }
-        }*/
     }
 
     fn get(&self, var: TypeVar) -> &LocalType {
@@ -545,30 +512,6 @@ impl FuncTypes {
         let ptr = self.var_types.as_mut_ptr();
         unsafe {
             (&mut *ptr.offset(var1 as isize),&mut *ptr.offset(var2 as isize))
-        }
-    }
-
-    fn get_mut_3(&mut self, var1: TypeVar, var2: TypeVar, var3: TypeVar) -> (&mut LocalType, &mut LocalType, &mut LocalType) {
-        let var1 = var1.0 as isize;
-        let var2 = var2.0 as isize;
-        let var3 = var3.0 as isize;
-
-        // safety: indices must be distinct and valid
-        assert!(var1 != var2);
-        assert!(var2 != var3);
-        assert!(var1 != var3);
-
-        assert!((var1 as usize) < self.var_types.len());
-        assert!((var2 as usize) < self.var_types.len());
-        assert!((var3 as usize) < self.var_types.len());
-
-        let ptr = self.var_types.as_mut_ptr();
-        unsafe {
-            (
-                &mut *ptr.offset(var1 as isize),
-                &mut *ptr.offset(var2 as isize),
-                &mut *ptr.offset(var3 as isize)
-            )
         }
     }
 
@@ -625,7 +568,6 @@ impl FuncTypes {
                 }
             }
             OpBinary::ShiftL | OpBinary::ShiftR => {
-                //let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
 
                 if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
                     // lhs and res should match
@@ -638,7 +580,6 @@ impl FuncTypes {
             OpBinary::Add | OpBinary::Sub | OpBinary::Mul | OpBinary::Div | OpBinary::Rem |
             OpBinary::BitAnd | OpBinary::BitOr | OpBinary::BitXor => {
 
-                //let (lhs,rhs,res) = self.get_mut_3(lhs, rhs,res);
                 if self.get(lhs).kind.is_op_prim() && self.get(rhs).kind.is_op_prim() {
                     self.solve_equal(lhs, rhs);
                     self.solve_equal(rhs, res);
@@ -658,6 +599,8 @@ impl FuncTypes {
         for ty in &mut self.var_types {
             if let TypeKind::Int(None) = ty.kind {
                 ty.kind = TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed)));
+            } else if let TypeKind::Float(None) = ty.kind {
+                ty.kind = TypeKind::Float(Some(FloatWidth::Float64));
             }
         }
     }
