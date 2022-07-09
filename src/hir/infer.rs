@@ -317,7 +317,7 @@ const TYPE_INVALID: TypeVar = TypeVar(0xFFFFFFFF);
 const TYPE_VOID: TypeVar = TypeVar(0);
 
 impl FuncTypes {
-    pub fn new(func: &mut FuncHIR) -> Self {
+    pub fn new(func: &mut FuncHIR, arg_count: usize) -> Self {
         let mut types = FuncTypes{
             var_types: vec!(
                 LocalType{kind: TypeKind::Tuple, args: vec!()}, // TYPE_VOID
@@ -326,6 +326,11 @@ impl FuncTypes {
             constraints: vec!(),
             constraints_sat: vec!()
         };
+
+        for i in 0..arg_count {
+            let var_index = func.vars[i];
+            types.init_expr(func, var_index);
+        }
 
         let main_var = types.init_expr(func, func.root_expr as u32);
         types.add_constraint(TypeConstraint::EqualLit(main_var, func.ret_ty.clone()));
@@ -398,6 +403,9 @@ impl FuncTypes {
             Expr::LitChar(_) => {
                 self.new_var(TypeKind::Char)
             }
+            Expr::LitVoid => {
+                self.new_var(TypeKind::Tuple)
+            }
             Expr::Block(block) => {
                 let block_var = self.new_var(TypeKind::Unknown);
 
@@ -430,6 +438,23 @@ impl FuncTypes {
 
                 TYPE_VOID
             }
+            Expr::If(cond, if_block, else_expr) => {
+                let cond_var = self.init_expr(func,*cond);
+                self.add_constraint(TypeConstraint::EqualLit(cond_var,GlobalType::simple(TypeKind::Bool)));
+
+                for stmt in &if_block.stmts {
+                    self.init_expr(func,*stmt);
+                }
+
+                if let Some(expr_expr) = else_expr {
+                    panic!("todo good ifs");
+                } else {
+                    if let Some(res) = if_block.result {
+                        self.init_expr(func, res);
+                    }
+                    TYPE_VOID
+                }
+            }
 
             Expr::CallBuiltin(name, args) => {
                 let entry = BUILTINS.get(name.as_str());
@@ -438,6 +463,18 @@ impl FuncTypes {
                 }
 
                 let sig = &entry.unwrap().1;
+
+                assert_eq!(args.len(),sig.inputs.len());
+
+                for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
+                    let var = self.init_expr(func,*arg);
+                    self.add_constraint(TypeConstraint::EqualLit(var,GlobalType::from_legacy(ty)));
+                }
+
+                self.new_var(convert_legacy_ty(&sig.output))
+            }
+            Expr::Call(call_func, args) => {
+                let sig = call_func.sig();
 
                 assert_eq!(args.len(),sig.inputs.len());
 

@@ -73,7 +73,7 @@ impl FuncHIR {
         }
 
         let (mut types,_) = profile("type infer / setup",||{
-            FuncTypes::new(&mut code)
+            FuncTypes::new(&mut code,ty_sig.inputs.len())
         });
 
         profile("type infer / solve",||{
@@ -198,7 +198,7 @@ impl Block {
 
     pub fn add_args(&mut self, code: &mut FuncHIR, syn_sig: &syn::Signature, sig: &Signature) {
         for (i, (syn_arg, ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
-            let var_id = code.push_expr(Expr::Arg(i as u32, *ty));
+            let var_id = code.push_expr(Expr::Var(i as u32, *ty));
             code.vars.push(var_id);
 
             let name = match syn_arg {
@@ -492,7 +492,6 @@ impl Block {
 
 #[derive(Debug)]
 pub enum Expr {
-    Arg(u32,Type),
     Var(u32,Type),
     Block(Box<Block>),
     DeclVar(u32),

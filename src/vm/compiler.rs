@@ -1082,12 +1082,11 @@ impl<'a> BCompiler<'a> {
                 self.push_code(Instr::SlotPtr(ret_ptr_slot, dest_slot));
 
                 for (ty, ex) in sig.inputs.iter().zip(args.iter()) {
-                    panic!("todo arg");
-                    /*let slot = self.frame.alloc(&ty);
+                    let slot = self.frame.alloc(&GlobalType::from_legacy(ty));
 
                     let arg_frame = self.frame;
                     self.lower_expr(*ex, Some(slot));
-                    assert!(arg_frame == self.frame);*/
+                    assert!(arg_frame == self.frame);
                 }
 
                 self.push_code(Instr::Call(call_base, func));
