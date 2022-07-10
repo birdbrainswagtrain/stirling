@@ -182,7 +182,8 @@ impl GlobalType {
 
             TypeKind::Bool => 1,
             TypeKind::Char => 4,
-
+            
+            TypeKind::Never => 0,
             TypeKind::Tuple => {
                 assert!(self.args.is_none());
                 0
@@ -206,6 +207,7 @@ impl GlobalType {
             TypeKind::Bool => 1,
             TypeKind::Char => 4,
 
+            TypeKind::Never => 1,
             TypeKind::Tuple => {
                 assert!(self.args.is_none());
                 1
@@ -229,7 +231,8 @@ enum TypeConstraint {
     EqualLit(TypeVar,GlobalType),
     OpBinary{op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
     OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar},
-    CheckBlockNever{var: TypeVar, expr_id: u32}
+    CheckBlockNever{var: TypeVar, expr_id: u32},
+    LeastUpperBound2{res: TypeVar, arg1: TypeVar, arg2: TypeVar}
 }
 
 impl TypeConstraint {
@@ -238,6 +241,7 @@ impl TypeConstraint {
     fn bool(var: TypeVar) -> Self {
         TypeConstraint::EqualLit(var,GlobalType::simple(TypeKind::Bool))
     }
+    // todo same for void?
 }
 
 #[derive(Debug,Clone,Copy)]
@@ -440,6 +444,36 @@ impl FuncTypes {
 
                 block_var
             }
+            Expr::If(cond, then_block, else_expr) => {
+                let cond_var = self.init_expr(func,*cond);
+                self.add_constraint(TypeConstraint::bool(cond_var));
+
+                for stmt in &then_block.stmts {
+                    self.init_expr(func,*stmt);
+                }
+
+                if let Some(else_expr) = else_expr {
+                    let then_var = if let Some(res) = then_block.result {
+                        self.init_expr(func, res)
+                    } else {
+                        self.new_var(TypeKind::Tuple)
+                    };
+
+                    let else_var = self.init_expr(func,*else_expr);
+
+                    let res_var = self.new_var(TypeKind::Unknown);
+
+                    self.add_constraint(TypeConstraint::LeastUpperBound2{ res: res_var, arg1: then_var, arg2: else_var });
+
+                    res_var
+                } else {
+                    if let Some(res) = then_block.result {
+                        let res_var = self.init_expr(func,res);
+                        self.add_constraint(TypeConstraint::Equal(res_var,TYPE_VOID));
+                    }
+                    TYPE_VOID
+                }
+            }
             Expr::While(cond, block) => {
                 let cond_var = self.init_expr(func,*cond);
                 self.add_constraint(TypeConstraint::bool(cond_var));
@@ -454,23 +488,6 @@ impl FuncTypes {
                 }
 
                 TYPE_VOID
-            }
-            Expr::If(cond, if_block, else_expr) => {
-                let cond_var = self.init_expr(func,*cond);
-                self.add_constraint(TypeConstraint::bool(cond_var));
-
-                for stmt in &if_block.stmts {
-                    self.init_expr(func,*stmt);
-                }
-
-                if let Some(expr_expr) = else_expr {
-                    panic!("todo good ifs");
-                } else {
-                    if let Some(res) = if_block.result {
-                        self.init_expr(func, res);
-                    }
-                    TYPE_VOID
-                }
             }
 
             Expr::CallBuiltin(name, args) => {
@@ -501,6 +518,18 @@ impl FuncTypes {
                 }
 
                 self.new_var(convert_legacy_ty(&sig.output))
+            }
+            Expr::Return(ret_expr) => {
+                let ret_var = if let Some(ret_expr) = ret_expr {
+                    self.init_expr(func,*ret_expr)
+                } else {
+                    TYPE_VOID
+                };
+
+                // todo coerce?
+                self.add_constraint(TypeConstraint::EqualLit(ret_var,func.ret_ty.clone()));
+
+                self.new_var(TypeKind::Never)
             }
 
             _ => {
@@ -533,13 +562,30 @@ impl FuncTypes {
 
                     let lt = &mut self.var_types[var.0 as usize];
 
-                    lt.unify_g(&ty);
-            
-                    lt.kind.is_known()
+                    if lt.kind == TypeKind::Never {
+                        // dumb hack -- todo probably replace this constraint entirely with some coerceto constraint
+                        true
+                    } else {
+                        lt.unify_g(&ty);
+                
+                        lt.kind.is_known()
+                    }
                 }
                 TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
                 TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
-                TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id)
+                TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id),
+                TypeConstraint::LeastUpperBound2{ res, arg1, arg2 } => {
+                    //println!("lub.arg1 = {:?}",self.get(*arg1));
+                    //println!("lub.arg2 = {:?}",self.get(*arg2));
+                    //println!("lub.res  = {:?}",self.get(*res));
+
+                    // big, massive todo
+                    if self.get(*arg1) == self.get(*arg2) {
+                        self.solve_equal(*arg1, *res)
+                    } else {
+                        false
+                    }
+                }
             };
             if sat {
                 self.constraints_sat.push(c);
@@ -734,6 +780,9 @@ impl FuncTypes {
             Expr::While(..) | // <- looks like the cond can just be ignored
             Expr::DeclVar(_) | Expr::Var(..) | Expr::CastPrimitive(..) |
             Expr::LitInt(..) | Expr::LitFloat(..) | Expr::LitBool(_) | Expr::LitChar(_) | Expr::LitVoid => Some(false),
+
+            // always diverge
+            Expr::Return(_) => Some(true),
 
             _ => panic!("todo never check {:?}",expr)
         }
