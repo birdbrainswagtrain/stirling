@@ -232,6 +232,14 @@ enum TypeConstraint {
     CheckBlockNever{var: TypeVar, expr_id: u32}
 }
 
+impl TypeConstraint {
+    // used for conditions and &&/|| args.
+    // todo possibly allow never?
+    fn bool(var: TypeVar) -> Self {
+        TypeConstraint::EqualLit(var,GlobalType::simple(TypeKind::Bool))
+    }
+}
+
 #[derive(Debug,Clone,Copy)]
 enum OpUnary {
     Neg,
@@ -365,12 +373,21 @@ impl FuncTypes {
                 let lhs = self.init_expr(func,*lhs);
                 let rhs = self.init_expr(func,*rhs);
 
-                let (op,ty) = op_constraint_and_type(op);
-                let res = self.new_var(ty);
-
-                self.add_constraint(TypeConstraint::OpBinary{op, res, lhs, rhs});
-
-                res
+                match op {
+                    BinOp::And(_) | BinOp::Or(_) => {
+                        self.add_constraint(TypeConstraint::bool(lhs));
+                        self.add_constraint(TypeConstraint::bool(rhs));
+                        self.new_var(TypeKind::Bool)
+                    },
+                    _ => {
+                        let (op,ty) = op_constraint_and_type(op);
+                        let res = self.new_var(ty);
+        
+                        self.add_constraint(TypeConstraint::OpBinary{op, res, lhs, rhs});
+        
+                        res
+                    }
+                }
             }
             Expr::UnOp(arg, op) => {
                 let arg = self.init_expr(func,*arg);
@@ -425,7 +442,7 @@ impl FuncTypes {
             }
             Expr::While(cond, block) => {
                 let cond_var = self.init_expr(func,*cond);
-                self.add_constraint(TypeConstraint::EqualLit(cond_var,GlobalType::simple(TypeKind::Bool)));
+                self.add_constraint(TypeConstraint::bool(cond_var));
 
                 for stmt in &block.stmts {
                     self.init_expr(func,*stmt);
@@ -440,7 +457,7 @@ impl FuncTypes {
             }
             Expr::If(cond, if_block, else_expr) => {
                 let cond_var = self.init_expr(func,*cond);
-                self.add_constraint(TypeConstraint::EqualLit(cond_var,GlobalType::simple(TypeKind::Bool)));
+                self.add_constraint(TypeConstraint::bool(cond_var));
 
                 for stmt in &if_block.stmts {
                     self.init_expr(func,*stmt);
@@ -747,6 +764,10 @@ impl FuncTypes {
     pub fn apply_types(&self, func: &mut FuncHIR) {
         assert_eq!(func.exprs.len(),self.expr_vars.len());
         for (expr,var) in func.exprs.iter_mut().zip(self.expr_vars.iter()) {
+            if *var == TYPE_INVALID {
+                println!("no type for expr {:?}",expr);
+                panic!();
+            }
             expr.ty = self.get_global(*var);
         }
     }
