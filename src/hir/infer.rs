@@ -228,7 +228,8 @@ enum TypeConstraint {
     Equal(TypeVar,TypeVar),
     EqualLit(TypeVar,GlobalType),
     OpBinary{op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
-    OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar}
+    OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar},
+    CheckBlockNever{var: TypeVar, expr_id: u32}
 }
 
 #[derive(Debug,Clone,Copy)]
@@ -417,8 +418,7 @@ impl FuncTypes {
                     let res_var = self.init_expr(func,res);
                     self.add_constraint(TypeConstraint::Equal(block_var, res_var));
                 } else {
-                    // TODO never check
-                    self.add_constraint(TypeConstraint::EqualLit(block_var, GlobalType::simple(TypeKind::Tuple)));
+                    self.add_constraint(TypeConstraint::CheckBlockNever{ var: block_var, expr_id });
                 }
 
                 block_var
@@ -507,7 +507,7 @@ impl FuncTypes {
         self.constraints.push(c);
     }
 
-    pub fn solve(&mut self) {
+    pub fn solve(&mut self, func: &mut FuncHIR) {
         let constraints = std::mem::take(&mut self.constraints);
         for c in constraints {
             let sat = match &c {
@@ -522,7 +522,7 @@ impl FuncTypes {
                 }
                 TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
                 TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
-                //_ => panic!("todo solve {:?}",c)
+                TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id)
             };
             if sat {
                 self.constraints_sat.push(c);
@@ -629,6 +629,108 @@ impl FuncTypes {
                 }
             }
             _ => panic!("? {:?}",op)
+        }
+    }
+
+    fn solve_block_never(&mut self, func: &FuncHIR, var: TypeVar, expr_id: u32) -> bool {
+        // check type already resolved
+        let ty = self.get(var);
+        if ty.kind.is_known() {
+            return true;
+        } 
+        
+        let expr = &func.exprs[expr_id as usize].expr;
+        let block = match expr {
+            Expr::Block(block) => {
+                block
+            }
+            _ => panic!("todo never check root {:?}",expr)
+        };
+        let mut is_never = false;
+        for stmt_id in &block.stmts {
+            let res = self.check_expr_is_never(func,*stmt_id);
+            match res {
+                None => return false, // can't determine type, bail out
+                Some(true) => {
+                    is_never = true;
+                    break;
+                }
+                Some(false) => ()
+            }
+        }
+        let goal_ty = GlobalType::simple(if is_never { TypeKind::Never } else { TypeKind::Tuple });
+
+        let current_ty = &mut self.var_types[var.0 as usize];
+
+        current_ty.unify_g(&goal_ty);
+
+        return true;
+    }
+
+    fn check_expr_is_never(&self, func: &FuncHIR, expr_id: u32) -> Option<bool> {
+        let expr = &func.exprs[expr_id as usize].expr;
+        match expr {
+
+            // check children
+            Expr::UnOp(arg,_) => {
+                self.check_expr_is_never(func, *arg)
+            }
+            Expr::Assign(a,b) |
+            Expr::BinOp(a,_,b) => {
+                let a = self.check_expr_is_never(func, *a)?;
+                let b = self.check_expr_is_never(func, *b)?;
+                Some(a || b)
+            }
+            // check args and type of the expression
+            Expr::Call(_,args) |
+            Expr::CallBuiltin(_,args) => {
+                // assume builtins never diverge
+                for arg in args {
+                    let arg = self.check_expr_is_never(func, *arg)?;
+                    if arg {
+                        return Some(true);
+                    }
+                }
+
+                let res_var = self.expr_vars[expr_id as usize];
+                self.check_ty_never(res_var)
+            }
+
+            // the cond may contribute to a never result
+            // then check the type of the expression
+            Expr::If(cond,_,_) => {
+                let cond = self.check_expr_is_never(func, *cond)?;
+                if cond {
+                    return Some(true);
+                }
+
+                let res_var = self.expr_vars[expr_id as usize];
+                self.check_ty_never(res_var)
+            }
+            // check the type of the expression
+            Expr::Block(_) => {
+                let res_var = self.expr_vars[expr_id as usize];
+                self.check_ty_never(res_var)
+            }
+
+            // never diverge
+            Expr::While(..) | // <- looks like the cond can just be ignored
+            Expr::DeclVar(_) | Expr::Var(..) | Expr::CastPrimitive(..) |
+            Expr::LitInt(..) | Expr::LitFloat(..) | Expr::LitBool(_) | Expr::LitChar(_) | Expr::LitVoid => Some(false),
+
+            _ => panic!("todo never check {:?}",expr)
+        }
+    }
+
+    fn check_ty_never(&self, var: TypeVar) -> Option<bool> {
+        // check if this type or any fields or arguments contain unknown or never
+        // for these purposes, unknown int and float vars do not count as unknown
+        let ty = self.get(var);
+        assert_eq!(ty.args.len(),0);
+        match ty.kind {
+            TypeKind::Never => Some(true),
+            TypeKind::Unknown => None,
+            _ => Some(false)
         }
     }
 

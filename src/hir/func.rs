@@ -79,7 +79,7 @@ impl FuncHIR {
         profile("type infer / solve",||{
             //println!("pre-solve: {}",types.constraint_count());
             for _i in 1..10 {
-                types.solve();
+                types.solve(&mut code);
     
                 let count = types.constraint_count();
                 //println!("solve {}: {}",i,count);
