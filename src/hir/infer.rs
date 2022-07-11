@@ -229,6 +229,7 @@ impl GlobalType {
 enum TypeConstraint {
     Equal(TypeVar,TypeVar),
     EqualLit(TypeVar,GlobalType),
+    Assign{src: TypeVar, dst: TypeVar},
     OpBinary{op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
     OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar},
     CheckBlockNever{var: TypeVar, expr_id: u32},
@@ -366,10 +367,10 @@ impl FuncTypes {
                 TYPE_VOID
             }
             Expr::Assign(dst, src) => {
-                let lhs = self.init_expr(func,*dst);
-                let rhs = self.init_expr(func,*src);
+                let dst = self.init_expr(func,*dst);
+                let src = self.init_expr(func,*src);
                 
-                self.add_constraint(TypeConstraint::Equal(lhs, rhs));
+                self.add_constraint(TypeConstraint::Assign{src,dst});
 
                 TYPE_VOID
             }
@@ -429,20 +430,19 @@ impl FuncTypes {
                 self.new_var(TypeKind::Tuple)
             }
             Expr::Block(block) => {
-                let block_var = self.new_var(TypeKind::Unknown);
-
+                
                 for stmt in &block.stmts {
                     self.init_expr(func,*stmt);
                 }
-
+                
                 if let Some(res) = block.result {
-                    let res_var = self.init_expr(func,res);
-                    self.add_constraint(TypeConstraint::Equal(block_var, res_var));
+                    self.init_expr(func,res)
+                    //self.add_constraint(TypeConstraint::Equal(block_var, res_var));
                 } else {
+                    let block_var = self.new_var(TypeKind::Unknown);
                     self.add_constraint(TypeConstraint::CheckBlockNever{ var: block_var, expr_id });
+                    block_var
                 }
-
-                block_var
             }
             Expr::If(cond, then_block, else_expr) => {
                 let cond_var = self.init_expr(func,*cond);
@@ -456,7 +456,9 @@ impl FuncTypes {
                     let then_var = if let Some(res) = then_block.result {
                         self.init_expr(func, res)
                     } else {
-                        self.new_var(TypeKind::Tuple)
+                        let then_var = self.new_var(TypeKind::Unknown);
+                        self.add_constraint(TypeConstraint::CheckBlockNever{ var: then_var, expr_id });
+                        then_var
                     };
 
                     let else_var = self.init_expr(func,*else_expr);
@@ -571,6 +573,7 @@ impl FuncTypes {
                         lt.kind.is_known()
                     }
                 }
+                TypeConstraint::Assign { src, dst } => self.solve_assign(*src,*dst),
                 TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
                 TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
                 TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id),
@@ -635,6 +638,31 @@ impl FuncTypes {
         }
 
         t1.kind.is_known()
+    }
+
+    fn solve_assign(&mut self, src_var: TypeVar, dst_var: TypeVar) -> bool {
+        // todo write more robust coercion logic that can be re-used elsewhere
+        let src = self.get(src_var);
+        let dst = self.get(dst_var);
+        if dst.kind == TypeKind::Unknown {
+            if src.kind == TypeKind::Never {
+                // we don't assume never is the correct type
+                false
+            } else {
+                // dst is unknown, copy the source type
+                self.solve_equal(src_var, dst_var)
+            }
+        } else {
+            if src.kind == TypeKind::Never {
+                // src is never and dst is known -- this is a valid coercion
+                true
+            } else if src.kind != TypeKind::Unknown {
+                // src and dst are both known, make them equal
+                self.solve_equal(src_var, dst_var)
+            } else {
+                false
+            }
+        }
     }
 
     fn solve_unary(&mut self, _op: OpUnary, res: TypeVar, arg: TypeVar) -> bool {
@@ -705,6 +733,9 @@ impl FuncTypes {
         let expr = &func.exprs[expr_id as usize].expr;
         let block = match expr {
             Expr::Block(block) => {
+                block
+            }
+            Expr::If(_,block,_) => {
                 block
             }
             _ => panic!("todo never check root {:?}",expr)

@@ -63,6 +63,19 @@ fn ret_if_3() -> i32 {
     }
 }
 
+fn ret_never_val() -> i32 {
+    let x = return 90;
+    x
+}
+
+fn ret_nested() -> i32 {
+    return return return 100;
+}
+
+fn ret_logic() -> i32 {
+    (return 110) && (return 1234);
+}
+
 pub fn main() {
     _builtin::print_int(ret_expr() as _);
     _builtin::print_int(ret_keyword() as _);
@@ -73,6 +86,14 @@ pub fn main() {
     _builtin::print_int(ret_if_1() as _);
     _builtin::print_int(ret_if_2() as _);
     _builtin::print_int(ret_if_3() as _);
+
+    _builtin::print_int(ret_if_3() as _);
+
+    _builtin::print_int(ret_never_val() as _);
+    _builtin::print_int(ret_nested() as _);
+    _builtin::print_int(ret_logic() as _);
+
+
     //_builtin::print_int(g() as _);
     //_builtin::print_int(h() as _);
 
