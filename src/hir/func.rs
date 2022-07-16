@@ -1,3 +1,4 @@
+use crate::is_verbose;
 use crate::profiler::profile;
 
 use super::infer::{FuncTypes, TypeKind, GlobalType, IntWidth, IntSign, FloatWidth};
@@ -79,13 +80,26 @@ impl FuncHIR {
         profile("type infer / solve",||{
             //println!("pre-solve: {}",types.constraint_count());
             for _i in 1..10 {
+                let pre_count = types.constraint_count();
+
                 types.solve(&mut code);
     
                 let count = types.constraint_count();
-                //println!("solve {}: {}",i,count);
+
+                //println!("{} {}",_i,count);
+
+                if count == pre_count {
+                    //println!("todo desperate solve! {}",_i);
+                    types.solve_desperate(&mut code);
+                }
+
                 if count == 0 {
                     break;
                 }
+            }
+
+            if is_verbose() {
+                types.constraint_dump();
             }
     
             types.fix_unknown_primitives();

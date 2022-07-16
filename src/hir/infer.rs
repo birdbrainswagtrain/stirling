@@ -87,6 +87,14 @@ impl TypeKind {
         }
     }
 
+    fn cannot_coerce(&self) -> bool {
+        match self {
+            // this should maybe be a blacklist, but use a whitelist for now
+            TypeKind::Int(_) => true,
+            _ => false
+        }
+    }
+
     /// Is the type a primitive for the purposes of operator inference?
     fn is_op_prim(&self) -> bool {
         match self {
@@ -533,6 +541,14 @@ impl FuncTypes {
 
                 self.new_var(TypeKind::Never)
             }
+            Expr::Break(_, break_expr) => {
+                assert!(break_expr.is_none());
+
+                self.new_var(TypeKind::Never)
+            }
+            Expr::Continue(_) => {
+                self.new_var(TypeKind::Never)
+            }
 
             _ => {
                 println!("todo setup types: {:?}",expr);
@@ -577,23 +593,28 @@ impl FuncTypes {
                 TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
                 TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
                 TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id),
-                TypeConstraint::LeastUpperBound2{ res, arg1, arg2 } => {
-                    //println!("lub.arg1 = {:?}",self.get(*arg1));
-                    //println!("lub.arg2 = {:?}",self.get(*arg2));
-                    //println!("lub.res  = {:?}",self.get(*res));
-
-                    // big, massive todo
-                    if self.get(*arg1) == self.get(*arg2) {
-                        self.solve_equal(*arg1, *res)
-                    } else {
-                        false
-                    }
-                }
+                TypeConstraint::LeastUpperBound2{ res, arg1, arg2 } => self.solve_lub2(*res, *arg1, *arg2),
             };
             if sat {
                 self.constraints_sat.push(c);
             } else {
                 self.constraints.push(c);
+            }
+        }
+    }
+
+    pub fn solve_desperate(&mut self, func: &mut FuncHIR) {
+        for c in &self.constraints {
+            match c {
+                TypeConstraint::Assign { src, dst } => {
+                    let src_ty = self.get(*src);
+                    let dst_ty = self.get(*dst);
+                    if src_ty.kind == TypeKind::Never && dst_ty.kind == TypeKind::Unknown {
+                        self.var_types[dst.0 as usize].kind = TypeKind::Never;
+                        return;
+                    }
+                }
+                _ => ()
             }
         }
     }
@@ -645,23 +666,40 @@ impl FuncTypes {
         let src = self.get(src_var);
         let dst = self.get(dst_var);
         if dst.kind == TypeKind::Unknown {
-            if src.kind == TypeKind::Never {
-                // we don't assume never is the correct type
-                false
-            } else {
-                // dst is unknown, copy the source type
-                self.solve_equal(src_var, dst_var)
+            if src.kind != TypeKind::Never {
+                return self.solve_equal(src_var, dst_var);
             }
         } else {
+            // src must coerce to dst
             if src.kind == TypeKind::Never {
                 // src is never and dst is known -- this is a valid coercion
-                true
+                return true;
             } else if src.kind != TypeKind::Unknown {
                 // src and dst are both known, make them equal
-                self.solve_equal(src_var, dst_var)
-            } else {
-                false
+                return self.solve_equal(src_var, dst_var);
             }
+        }
+
+        self.get(src_var).kind.is_known() && self.get(dst_var).kind.is_known()
+    }
+
+    fn solve_lub2(&mut self, res_var: TypeVar, arg1_var: TypeVar, arg2_var: TypeVar) -> bool {
+
+        // if either argument is of a known type that cannot coerce to another type, assume it is our result type
+        if self.get(arg1_var).kind.cannot_coerce() {
+            self.solve_equal(arg1_var, res_var);
+            return self.get(arg1_var).kind.is_known() && self.get(arg2_var).kind.is_known();
+        }
+        if self.get(arg2_var).kind.cannot_coerce() {
+            self.solve_equal(arg2_var, res_var);
+            return self.get(arg1_var).kind.is_known() && self.get(arg2_var).kind.is_known();
+        }
+
+        // big, massive todo
+        if self.get(arg1_var) == self.get(arg2_var) {
+            self.solve_equal(arg1_var, res_var)
+        } else {
+            false
         }
     }
 
@@ -850,6 +888,43 @@ impl FuncTypes {
             }
             expr.ty = self.get_global(*var);
         }
+    }
+
+    pub fn constraint_dump(&self) {
+        println!("=== UNSOLVED ===");
+        for c in &self.constraints {
+            self.dump_constraint(c);
+        }
+        println!("=== SOLVED ===");
+        for c in &self.constraints_sat {
+            self.dump_constraint(c);
+        }
+    }
+
+    fn dump_constraint(&self, c: &TypeConstraint) {
+        match c {
+            TypeConstraint::Assign{ src, dst } => {
+                print!("[assign] ");
+                self.dump_var(*src);
+                print!(" -> ");
+                self.dump_var(*dst);
+                println!();
+            }
+            TypeConstraint::LeastUpperBound2{ res, arg1, arg2 } => {
+                print!("[lub2] ");
+                self.dump_var(*arg1);
+                print!(" + ");
+                self.dump_var(*arg2);
+                print!(" -> ");
+                self.dump_var(*res);
+                println!();
+            }
+            _ => println!("!!! todo dump {:?}",c)
+        }
+    }
+
+    fn dump_var(&self, var: TypeVar) {
+        print!("({}: {:?})",var.0,self.get(var));
     }
 
     pub fn constraint_count(&self) -> usize {
