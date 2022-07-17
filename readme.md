@@ -1,41 +1,17 @@
 # Stirling
 
-> Experimental JIT for a primitive subset of Rust
+> Experimental interpreter for a subset of Rust
 ## Features
-
-### Types
-- **Integers:** Literals, arithmetic, bitwise, comparisons.
-- **Floats**: Literals, arithmetic, comparisons.
-- **Bools**: Literals, logic, bitwise (IE non-lazy logic), equality.
-- **Chars**: Literals, comparisons.
-- **References**: Scalar types can be reference and dereferenced.
-- **Pointers**: Cast between references and integers.
-
-### As-Casts
-- int -> int
-- int -> float
-- u8 -> char
-- char -> int
-- bool -> int
-- float -> float
-- float -> int
-- ref -> ptr
-- ptr -> ptr
-- ptr -> int
-
-### Control Flow
-- blocks, can yield values
-- `if` expressions, can yield values
-- `while` loops
-- `loop` loops, can yield values with `break`
-- `break` and `continue` for supported loop kinds, supports labels
-- simple function calls (no method invocation or generics)
+- Simple operations on primitive types: Integers, Floats, Booleans, etc.
+- Most control flow: blocks, if, while, loop, break, continue
+- Simple function calls (no methods or generics)
+- Some compound types: references, pointers, and tuples
 
 ### Not Yet Implemented
-- Patterns, match guards, if-let, etc
+- Patterns (if-let, match, etc)
 - Anything related to namespaces / modules / name resolution is probably severely busted.
 
 ### Not Supported
-The compiler mostly assumes you know what you're doing, and doesn't bother to check for unsafety.
+The compiler mostly assumes you know what you're doing. It does not check for unsafety.
 - The `mut` keyword is ignored. All values are assumed to be mutable. References track mutability but only for the sake of the type system.
 - There is no ownership, lifetimes, or borrow checker.
