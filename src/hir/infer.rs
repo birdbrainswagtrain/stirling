@@ -1,37 +1,16 @@
-use std::{rc::Rc, cell::Cell};
+use std::cell::Cell;
 
 use syn::{BinOp, UnOp};
 
 use crate::builtin::BUILTINS;
 
-use super::{func::{Block, Expr, FuncHIR, ExprInfo}, types::{Type, IntType, FloatType}};
+use super::{func::{Expr, FuncHIR}, types::global::GlobalType};
+use super::types::common::{TypeKind, IntWidth, IntSign, FloatWidth};
 
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub struct TypeVar(u32);
 
-#[derive(Debug,Clone,Copy,PartialEq)]
-pub enum IntWidth {
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Int128,
-    IntSize
-}
-
-#[derive(Debug,Clone,Copy,PartialEq)]
-pub enum FloatWidth {
-    Float32,
-    Float64
-}
-
-#[derive(Debug,Clone,Copy,PartialEq)]
-pub enum IntSign {
-    Signed,
-    Unsigned
-}
-
-fn convert_legacy_ty(ty: &Type) -> TypeKind {
+/*fn convert_legacy_ty(ty: &Type) -> TypeKind {
     match ty {
 
         Type::Int(IntType::I8) => TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed))),
@@ -62,48 +41,7 @@ fn convert_legacy_ty(ty: &Type) -> TypeKind {
         Type::Void => TypeKind::Tuple,
         _ => panic!("todo convert {:?}",ty)
     }
-}
-
-#[derive(Debug,Clone,PartialEq)]
-pub enum TypeKind {
-    Unknown,
-    Never,
-    Tuple, // used for '()' / void
-    Int(Option<(IntWidth,IntSign)>),
-    Float(Option<FloatWidth>),
-    Bool,
-    Char,
-    Ref(bool) // arg = is mutable?
-}
-
-impl TypeKind {
-    pub fn ptr() -> TypeKind {
-        Self::Int(Some((IntWidth::IntSize,IntSign::Unsigned)))
-    }
-
-    fn is_known(&self) -> bool {
-        match self {
-            TypeKind::Unknown | TypeKind::Int(None) | TypeKind::Float(None) => false,
-            _ => true
-        }
-    }
-
-    fn cannot_coerce(&self) -> bool {
-        match self {
-            // this should maybe be a blacklist, but use a whitelist for now
-            TypeKind::Int(_) => true,
-            _ => false
-        }
-    }
-
-    /// Is the type a primitive for the purposes of operator inference?
-    fn is_op_prim(&self) -> bool {
-        match self {
-            TypeKind::Bool | TypeKind::Int(_) | TypeKind::Float(_) => true,
-            _ => false
-        }
-    }
-}
+}*/
 
 #[derive(Debug,Clone,PartialEq)]
 struct LocalType {
@@ -131,7 +69,7 @@ impl LocalType {
 
     fn unify_g(&mut self, other: &GlobalType) {
         assert_eq!(self.args.len(), 0);
-        assert!(other.args.is_none());
+        assert_eq!(other.args.len(), 0);
 
         if self.kind == other.kind {
             return;
@@ -157,79 +95,6 @@ impl LocalType {
             (TypeKind::Float(None),TypeKind::Float(Some(_))) => UnifyResult::B,
 
             _ => panic!("todo unify kinds {:?} {:?}",a,b)
-        }
-    }
-}
-
-#[derive(Debug,Clone)]
-pub struct GlobalType {
-    pub kind: TypeKind,
-    pub args: Option<Rc<[GlobalType]>>
-}
-
-impl GlobalType {
-    pub fn simple(kind: TypeKind) -> Self {
-        GlobalType{kind, args: None}
-    }
-
-    pub fn from_legacy(ty: &Type) -> GlobalType {
-        let kind = convert_legacy_ty(ty);
-        GlobalType{ kind, args: None }
-    }
-
-    pub fn byte_size(&self) -> usize {
-        match self.kind {
-            TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
-            TypeKind::Int(Some((IntWidth::Int8,_))) => 1,
-            TypeKind::Int(Some((IntWidth::Int16,_))) => 2,
-            TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
-            TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
-            TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
-
-            TypeKind::Float(Some(FloatWidth::Float32)) => 4,
-            TypeKind::Float(Some(FloatWidth::Float64)) => 8,
-
-            TypeKind::Bool => 1,
-            TypeKind::Char => 4,
-            
-            TypeKind::Never => 0,
-            TypeKind::Tuple => {
-                assert!(self.args.is_none());
-                0
-            },
-            _ => panic!("todo size {:?}",self.kind)
-        }
-    }
-
-    pub fn byte_align(&self) -> usize {
-        match self.kind {
-            TypeKind::Int(Some((IntWidth::IntSize,_))) => 8,
-            TypeKind::Int(Some((IntWidth::Int8,_))) => 1,
-            TypeKind::Int(Some((IntWidth::Int16,_))) => 2,
-            TypeKind::Int(Some((IntWidth::Int32,_))) => 4,
-            TypeKind::Int(Some((IntWidth::Int64,_))) => 8,
-            TypeKind::Int(Some((IntWidth::Int128,_))) => 16,
-
-            TypeKind::Float(Some(FloatWidth::Float32)) => 4,
-            TypeKind::Float(Some(FloatWidth::Float64)) => 8,
-
-            TypeKind::Bool => 1,
-            TypeKind::Char => 4,
-
-            TypeKind::Never => 1,
-            TypeKind::Tuple => {
-                assert!(self.args.is_none());
-                1
-            },
-            _ => panic!("todo align {:?}",self.kind)
-        }
-    }
-
-    pub fn is_signed(&self) -> bool {
-        if let TypeKind::Int(Some((_,IntSign::Signed))) = self.kind {
-            true
-        } else {
-            false
         }
     }
 }
@@ -423,14 +288,12 @@ impl FuncTypes {
                 res
             }
             Expr::Var(_,ty) => {
-                let kind = convert_legacy_ty(ty);
-                self.new_var(kind)
+                self.new_var_from_global(ty)
             }
             Expr::CastPrimitive(arg, ty) => {
                 self.init_expr(func,*arg);
 
-                let kind = convert_legacy_ty(ty);
-                self.new_var(kind)
+                self.new_var_from_global(ty)
             }
             Expr::LitInt(_,ty) => {
                 self.new_var(TypeKind::Int(*ty))
@@ -576,10 +439,10 @@ impl FuncTypes {
 
                 for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
                     let var = self.init_expr(func,*arg);
-                    self.add_constraint(TypeConstraint::EqualLit(var,GlobalType::from_legacy(ty)));
+                    self.add_constraint(TypeConstraint::EqualLit(var,ty.clone()));
                 }
 
-                self.new_var(convert_legacy_ty(&sig.output))
+                self.new_var_from_global(&sig.output)
             }
             Expr::Call(call_func, args) => {
                 let sig = call_func.sig();
@@ -588,10 +451,10 @@ impl FuncTypes {
 
                 for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
                     let var = self.init_expr(func,*arg);
-                    self.add_constraint(TypeConstraint::EqualLit(var,GlobalType::from_legacy(ty)));
+                    self.add_constraint(TypeConstraint::EqualLit(var,ty.clone()));
                 }
 
-                self.new_var(convert_legacy_ty(&sig.output))
+                self.new_var_from_global(&sig.output)
             }
             Expr::Return(ret_expr) => {
                 let ret_var = if let Some(ret_expr) = ret_expr {
@@ -633,6 +496,13 @@ impl FuncTypes {
         res
     }
 
+    fn new_var_from_global(&mut self, source: &GlobalType) -> TypeVar {
+        let res = TypeVar(self.var_types.len() as u32);
+        assert_eq!(source.args.len(), 0);
+        self.var_types.push(LocalType { kind: source.kind.clone(), args: vec!() });
+        res
+    }
+
     fn add_constraint(&mut self, c: TypeConstraint) {
         self.constraints.push(c);
     }
@@ -652,7 +522,7 @@ impl FuncTypes {
                     } else {
                         lt.unify_g(&ty);
                 
-                        lt.kind.is_known()
+                        lt.kind.is_known_strict()
                     }
                 }
                 TypeConstraint::Assign { src, dst } => self.solve_assign(*src,*dst),
@@ -715,7 +585,7 @@ impl FuncTypes {
     fn solve_equal(&mut self, var1: TypeVar, var2: TypeVar) -> bool {
         if var1 == var2 {
             return true;
-            //return self.get(var1).kind.is_known();
+            //return self.get(var1).kind.is_known_strict();
         }
 
         let (t1,t2) = self.get_mut_2(var1, var2);
@@ -724,7 +594,7 @@ impl FuncTypes {
             t1.unify(t2);
         }
 
-        t1.kind.is_known()
+        t1.kind.is_known_strict()
     }
 
     fn solve_assign(&mut self, src_var: TypeVar, dst_var: TypeVar) -> bool {
@@ -746,7 +616,7 @@ impl FuncTypes {
             }
         }
 
-        self.get(src_var).kind.is_known() && self.get(dst_var).kind.is_known()
+        self.get(src_var).kind.is_known_strict() && self.get(dst_var).kind.is_known_strict()
     }
 
     fn solve_lub2(&mut self, res_var: TypeVar, arg1_var: TypeVar, arg2_var: TypeVar) -> bool {
@@ -754,11 +624,11 @@ impl FuncTypes {
         // if either argument is of a known type that cannot coerce to another type, assume it is our result type
         if self.get(arg1_var).kind.cannot_coerce() {
             self.solve_equal(arg1_var, res_var);
-            return self.get(arg1_var).kind.is_known() && self.get(arg2_var).kind.is_known();
+            return self.get(arg1_var).kind.is_known_strict() && self.get(arg2_var).kind.is_known_strict();
         }
         if self.get(arg2_var).kind.cannot_coerce() {
             self.solve_equal(arg2_var, res_var);
-            return self.get(arg1_var).kind.is_known() && self.get(arg2_var).kind.is_known();
+            return self.get(arg1_var).kind.is_known_strict() && self.get(arg2_var).kind.is_known_strict();
         }
 
         // big, massive todo
@@ -817,7 +687,7 @@ impl FuncTypes {
                     self.solve_equal(rhs, res);
                     self.solve_equal(res, lhs);
 
-                    self.get(lhs).kind.is_known()
+                    self.get(lhs).kind.is_known_strict()
                 } else {
                     // todo trait lookup
                     false
@@ -830,7 +700,7 @@ impl FuncTypes {
     fn solve_block_never(&mut self, func: &FuncHIR, var: TypeVar, expr_id: u32) -> bool {
         // check type already resolved
         let ty = self.get(var);
-        if ty.kind.is_known() {
+        if ty.kind.is_known_strict() {
             return true;
         } 
         

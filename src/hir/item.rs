@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use crate::vm::Instr;
 
 use super::func::FuncHIR;
-use super::types::Signature;
+use super::types::global::Signature;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Item {

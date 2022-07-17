@@ -2,14 +2,14 @@
 use crate::{
     hir::{
         func::{Block, Expr, ExprInfo, FuncHIR},
-        item::Function,
-        types::{CompoundType, FloatType, IntType, Type}, infer::{GlobalType, IntWidth, IntSign, FloatWidth},
+        item::Function
     },
     is_verbose,
     profiler::profile,
 };
 
-use crate::hir::infer::TypeKind;
+use crate::hir::types::global::GlobalType;
+use crate::hir::types::common::{TypeKind, IntWidth, IntSign, FloatWidth};
 
 use super::instr::Instr;
 
@@ -67,8 +67,7 @@ pub fn compile(func: &Function) -> Vec<Instr> {
         let mut var_map = vec![None; input_fn.vars.len()];
 
         for (i, input) in sig.inputs.iter().enumerate() {
-            let ty = GlobalType::from_legacy(input);
-            var_map[i] = Some(frame.alloc(&ty));
+            var_map[i] = Some(frame.alloc(input));
         }
 
         let mut compiler = BCompiler {
@@ -1082,7 +1081,7 @@ impl<'a> BCompiler<'a> {
                 self.push_code(Instr::SlotPtr(ret_ptr_slot, dest_slot));
 
                 for (ty, ex) in sig.inputs.iter().zip(args.iter()) {
-                    let slot = self.frame.alloc(&GlobalType::from_legacy(ty));
+                    let slot = self.frame.alloc(ty);
 
                     let arg_frame = self.frame;
                     self.lower_expr(*ex, Some(slot));

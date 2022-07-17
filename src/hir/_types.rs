@@ -1,4 +1,6 @@
-use once_cell::sync::{Lazy, OnceCell};
+use super::item::Scope;
+
+/*use once_cell::sync::{Lazy, OnceCell};
 
 use std::{collections::HashSet, sync::RwLock};
 
@@ -15,36 +17,13 @@ static TYPE_REGISTRY: Lazy<RwLock<TypeRegistry>> = Lazy::new(|| {
         lookup: HashSet::new(),
     })
 });
+*/
 
-#[derive(Debug)]
-pub struct Signature {
-    pub inputs: Vec<Type>,
-    pub output: Type,
-}
+// local
 
-impl Signature {
-    pub fn new(inputs: Vec<Type>, output: Type) -> Self {
-        Self { inputs, output }
-    }
+// global
 
-    pub fn from_syn(syn_sig: &syn::Signature, scope: &Scope) -> Signature {
-        let mut inputs = Vec::new();
-        for arg in &syn_sig.inputs {
-            match arg {
-                syn::FnArg::Receiver(_) => panic!("recv"),
-                syn::FnArg::Typed(x) => {
-                    inputs.push(Type::from_syn(&x.ty, scope));
-                }
-            };
-        }
-        let output = match &syn_sig.output {
-            syn::ReturnType::Default => Type::Void,
-            syn::ReturnType::Type(_, syn_ty) => Type::from_syn(&syn_ty, scope),
-        };
-        Signature { inputs, output }
-    }
-}
-
+/*
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum CompoundType {
     Ref(Type, bool),
@@ -498,3 +477,4 @@ impl StructLayout {
         layout
     }
 }
+*/

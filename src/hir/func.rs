@@ -1,9 +1,10 @@
 use crate::is_verbose;
 use crate::profiler::profile;
 
-use super::infer::{FuncTypes, TypeKind, GlobalType, IntWidth, IntSign, FloatWidth};
+use super::infer::FuncTypes;
 use super::item::{Function, Item, ItemName, Scope};
-use super::types::{Signature, Type};
+use super::types::global::{GlobalType, Signature};
+use super::types::common::{TypeKind, IntWidth, IntSign, FloatWidth};
 
 use std::cell::{RefCell, Cell};
 
@@ -52,7 +53,7 @@ impl FuncHIR {
             exprs: vec![],
             vars: vec![],
             break_index: vec![],
-            ret_ty: GlobalType::from_legacy(&ty_sig.output),
+            ret_ty: ty_sig.output.clone(),
             nested_temporaries: vec![],
         };
         profile("lower AST -> HIR", || {
@@ -172,13 +173,13 @@ fn pat_to_name(pat: &syn::Pat) -> String {
     }
 }
 
-fn pat_to_name_and_ty(pat: &syn::Pat, scope: &Scope) -> (String, Type) {
+fn pat_to_name_and_ty(pat: &syn::Pat, scope: &Scope) -> (String, GlobalType) {
     if let syn::Pat::Type(pat_ty) = pat {
-        let ty = Type::from_syn(&pat_ty.ty, scope);
+        let ty = GlobalType::from_syn(&pat_ty.ty, scope);
         let name = pat_to_name(&pat_ty.pat);
         (name, ty)
     } else {
-        (pat_to_name(pat), Type::Unknown)
+        (pat_to_name(pat), GlobalType::simple(TypeKind::Unknown))
     }
 }
 
@@ -212,7 +213,7 @@ impl Block {
 
     pub fn add_args(&mut self, code: &mut FuncHIR, syn_sig: &syn::Signature, sig: &Signature) {
         for (i, (syn_arg, ty)) in syn_sig.inputs.iter().zip(&sig.inputs).enumerate() {
-            let var_id = code.push_expr(Expr::Var(i as u32, *ty));
+            let var_id = code.push_expr(Expr::Var(i as u32, ty.clone()));
             code.vars.push(var_id);
 
             let name = match syn_arg {
@@ -348,7 +349,7 @@ impl Block {
                 }
             }
             syn::Expr::Cast(syn::ExprCast { expr, ty, .. }) => {
-                let hir_ty = Type::from_syn(ty, &self.scope.borrow());
+                let hir_ty = GlobalType::from_syn(ty, &self.scope.borrow());
                 let arg = self.add_expr(code, expr);
 
                 code.push_expr(Expr::CastPrimitive(arg, hir_ty))
@@ -506,7 +507,7 @@ impl Block {
 
 #[derive(Debug)]
 pub enum Expr {
-    Var(u32,Type),
+    Var(u32,GlobalType),
     Block(Box<Block>),
     DeclVar(u32),
     DeclTmp(u32),
@@ -525,7 +526,7 @@ pub enum Expr {
     LitVoid,
     NewTuple(Vec<u32>),
     Assign(u32, u32),
-    CastPrimitive(u32,Type),
+    CastPrimitive(u32,GlobalType),
     If(u32, Box<Block>, Option<u32>),
     While(u32, Box<Block>),
     Loop(Box<Block>),
