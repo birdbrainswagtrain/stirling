@@ -13,7 +13,7 @@ fn is_prime(x: i32) -> bool {
 
 pub fn main() {
     let mut i = 0;
-    while i < 100 {
+    while i < 10000 {
         i += 1;
         if is_prime(i) {
             _builtin::print_int(i as _);

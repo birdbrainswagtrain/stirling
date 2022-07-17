@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, cell::Cell};
 
 use syn::{BinOp, UnOp};
 
@@ -72,7 +72,8 @@ pub enum TypeKind {
     Int(Option<(IntWidth,IntSign)>),
     Float(Option<FloatWidth>),
     Bool,
-    Char
+    Char,
+    Ref(bool) // arg = is mutable?
 }
 
 impl TypeKind {
@@ -328,11 +329,19 @@ fn op_constraint_and_type(op: &BinOp) -> (OpBinary,TypeKind) {
     }
 }
 
+#[derive(Debug)]
+struct LoopType{
+    expr_id: u32,
+    type_var: TypeVar,
+    breaks: Cell<bool>
+}
+
 pub struct FuncTypes {
     var_types: Vec<LocalType>,
     expr_vars: Vec<TypeVar>,
     constraints: Vec<TypeConstraint>,
-    constraints_sat: Vec<TypeConstraint>
+    constraints_sat: Vec<TypeConstraint>,
+    loop_types: Vec<LoopType>
 }
 
 const TYPE_INVALID: TypeVar = TypeVar(0xFFFFFFFF);
@@ -346,7 +355,8 @@ impl FuncTypes {
             ),
             expr_vars: vec!(TYPE_INVALID; func.exprs.len()),
             constraints: vec!(),
-            constraints_sat: vec!()
+            constraints_sat: vec!(),
+            loop_types: vec!()
         };
 
         for i in 0..arg_count {
@@ -499,6 +509,60 @@ impl FuncTypes {
 
                 TYPE_VOID
             }
+            Expr::Loop(block) => {
+                let res = self.new_var(TypeKind::Unknown);
+
+                self.loop_types.push(LoopType { expr_id, type_var: res, breaks: Cell::new(false) });
+
+                // do loop body
+                {                    
+                    for stmt in &block.stmts {
+                        self.init_expr(func,*stmt);
+                    }
+    
+                    if let Some(res) = block.result {
+                        let res_var = self.init_expr(func,res);
+                        self.add_constraint(TypeConstraint::Equal(res_var,TYPE_VOID));
+                    }
+                }
+
+                let lt = self.loop_types.pop().unwrap();
+                assert_eq!(lt.expr_id,expr_id);
+                if !lt.breaks.get() {
+                    let ty = &mut self.var_types[res.0 as usize];
+                    assert_eq!(ty.kind,TypeKind::Unknown);
+                    ty.kind = TypeKind::Never;
+                }
+
+                res
+            }
+            Expr::Break(loop_expr, break_expr) => {
+                let mut loop_type = None;
+                for lt in &self.loop_types {
+                    if lt.expr_id == *loop_expr {
+                        loop_type = Some(lt);
+                        break;
+                    }
+                }
+                
+                if let Some(loop_type) = loop_type {
+                    loop_type.breaks.set(true);
+                    let dst = loop_type.type_var;
+                    if let Some(break_expr) = break_expr {
+                        let break_var = self.init_expr(func,*break_expr);
+                        self.add_constraint(TypeConstraint::Assign{src: break_var, dst});
+                    } else {
+                        self.add_constraint(TypeConstraint::Assign{src: TYPE_VOID, dst});
+                    }
+                } else {
+                    assert!(break_expr.is_none());
+                }
+
+                self.new_var(TypeKind::Never)
+            }
+            Expr::Continue(_) => {
+                self.new_var(TypeKind::Never)
+            }
 
             Expr::CallBuiltin(name, args) => {
                 let entry = BUILTINS.get(name.as_str());
@@ -541,15 +605,11 @@ impl FuncTypes {
 
                 self.new_var(TypeKind::Never)
             }
-            Expr::Break(_, break_expr) => {
-                assert!(break_expr.is_none());
+            Expr::Ref(ref_expr, is_mut) => {
+                let ref_ty = self.init_expr(func,*ref_expr);
 
-                self.new_var(TypeKind::Never)
+                self.new_var_with_args(TypeKind::Ref(*is_mut),vec!(ref_ty))
             }
-            Expr::Continue(_) => {
-                self.new_var(TypeKind::Never)
-            }
-
             _ => {
                 println!("todo setup types: {:?}",expr);
                 panic!();
@@ -564,6 +624,12 @@ impl FuncTypes {
     fn new_var(&mut self, kind: TypeKind) -> TypeVar {
         let res = TypeVar(self.var_types.len() as u32);
         self.var_types.push(LocalType { kind, args: vec!() });
+        res
+    }
+
+    fn new_var_with_args(&mut self, kind: TypeKind, args: Vec<TypeVar>) -> TypeVar {
+        let res = TypeVar(self.var_types.len() as u32);
+        self.var_types.push(LocalType { kind, args });
         res
     }
 
@@ -840,7 +906,7 @@ impl FuncTypes {
                 self.check_ty_never(res_var)
             }
             // check the type of the expression
-            Expr::Block(_) => {
+            Expr::Block(_) | Expr::Loop(_) => {
                 let res_var = self.expr_vars[expr_id as usize];
                 self.check_ty_never(res_var)
             }
