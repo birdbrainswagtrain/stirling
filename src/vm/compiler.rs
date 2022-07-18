@@ -581,20 +581,18 @@ impl<'a> BCompiler<'a> {
             Expr::DeclTmp(tmp_id) => {
                 assert!(mandatory_dest_slot.is_none());
                 let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
-                let tmp_ty = panic!("todo type");
-                /*let slot = self.frame.alloc(*tmp_ty);
+                let slot = self.frame.alloc(tmp_ty);
                 self.temp_slots.push((*tmp_id, slot));
 
-                SLOT_INVALID*/
+                SLOT_INVALID
             }
             Expr::StmtTmp(arg, temp_list) => {
                 let temp_len = self.temp_slots.len();
                 for tmp_id in temp_list {
                     let tmp_ty = &self.input_fn.exprs[*tmp_id as usize].ty;
-                    let tmp_ty = panic!("todo type");
-                    //let slot = self.frame.alloc(*tmp_ty);
+                    let slot = self.frame.alloc(tmp_ty);
                     //println!("alloc temp {:?}",slot);
-                    //self.temp_slots.push((*tmp_id, slot));
+                    self.temp_slots.push((*tmp_id, slot));
                 }
 
                 self.lower_expr(*arg, None);

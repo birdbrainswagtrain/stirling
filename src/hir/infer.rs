@@ -10,38 +10,29 @@ use super::types::common::{TypeKind, IntWidth, IntSign, FloatWidth};
 #[derive(Debug,Clone,Copy,PartialEq)]
 pub struct TypeVar(u32);
 
-/*fn convert_legacy_ty(ty: &Type) -> TypeKind {
-    match ty {
+enum UnifyResult {
+    A,
+    B
+}
 
-        Type::Int(IntType::I8) => TypeKind::Int(Some((IntWidth::Int8,IntSign::Signed))),
-        Type::Int(IntType::U8) => TypeKind::Int(Some((IntWidth::Int8,IntSign::Unsigned))),
-
-        Type::Int(IntType::I16) => TypeKind::Int(Some((IntWidth::Int16,IntSign::Signed))),
-        Type::Int(IntType::U16) => TypeKind::Int(Some((IntWidth::Int16,IntSign::Unsigned))),
-
-        Type::Int(IntType::I32) => TypeKind::Int(Some((IntWidth::Int32,IntSign::Signed))),
-        Type::Int(IntType::U32) => TypeKind::Int(Some((IntWidth::Int32,IntSign::Unsigned))),
-
-        Type::Int(IntType::I64) => TypeKind::Int(Some((IntWidth::Int64,IntSign::Signed))),
-        Type::Int(IntType::U64) => TypeKind::Int(Some((IntWidth::Int64,IntSign::Unsigned))),
-
-        Type::Int(IntType::I128) => TypeKind::Int(Some((IntWidth::Int128,IntSign::Signed))),
-        Type::Int(IntType::U128) => TypeKind::Int(Some((IntWidth::Int128,IntSign::Unsigned))),
-
-        Type::Int(IntType::ISize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Signed))),
-        Type::Int(IntType::USize) => TypeKind::Int(Some((IntWidth::IntSize,IntSign::Unsigned))),
-
-        Type::Float(FloatType::F32) => TypeKind::Float(Some(FloatWidth::Float32)),
-        Type::Float(FloatType::F64) => TypeKind::Float(Some(FloatWidth::Float64)),
-
-        Type::Bool => TypeKind::Bool,
-        Type::Char => TypeKind::Char,
-
-        Type::Unknown => TypeKind::Unknown,
-        Type::Void => TypeKind::Tuple,
-        _ => panic!("todo convert {:?}",ty)
+fn unify_kind(a: &TypeKind, b: &TypeKind) -> UnifyResult {
+    if a == b {
+        return UnifyResult::A;
     }
-}*/
+
+    match (a,b) {
+        (_,TypeKind::Unknown) => UnifyResult::A,
+        (TypeKind::Unknown,_) => UnifyResult::B,
+
+        (TypeKind::Int(Some(_)),TypeKind::Int(None)) => UnifyResult::A,
+        (TypeKind::Int(None),TypeKind::Int(Some(_))) => UnifyResult::B,
+
+        (TypeKind::Float(Some(_)),TypeKind::Float(None)) => UnifyResult::A,
+        (TypeKind::Float(None),TypeKind::Float(Some(_))) => UnifyResult::B,
+
+        _ => panic!("todo unify kinds {:?} {:?}",a,b)
+    }
+}
 
 #[derive(Debug,Clone,PartialEq)]
 struct LocalType {
@@ -49,61 +40,12 @@ struct LocalType {
     args: Vec<TypeVar>
 }
 
-enum UnifyResult {
-    A,
-    B
-}
-
-impl LocalType {
-    fn unify(&mut self, other: &mut LocalType) {
-        assert_eq!(self.args.len(), 0);
-        assert_eq!(other.args.len(), 0);
-
-        let res = Self::unify_kind(&self.kind,&other.kind);
-
-        match res {
-            UnifyResult::A => other.kind = self.kind.clone(),
-            UnifyResult::B => self.kind = other.kind.clone()
-        }
-    }
-
-    fn unify_g(&mut self, other: &GlobalType) {
-        assert_eq!(self.args.len(), 0);
-        assert_eq!(other.args.len(), 0);
-
-        if self.kind == other.kind {
-            return;
-        }
-
-        let res = Self::unify_kind(&self.kind,&other.kind);
-
-        match res {
-            UnifyResult::A => (),
-            UnifyResult::B => self.kind = other.kind.clone()
-        }
-    }
-
-    fn unify_kind(a: &TypeKind, b: &TypeKind) -> UnifyResult {
-        match (a,b) {
-            (_,TypeKind::Unknown) => UnifyResult::A,
-            (TypeKind::Unknown,_) => UnifyResult::B,
-
-            (TypeKind::Int(Some(_)),TypeKind::Int(None)) => UnifyResult::A,
-            (TypeKind::Int(None),TypeKind::Int(Some(_))) => UnifyResult::B,
-
-            (TypeKind::Float(Some(_)),TypeKind::Float(None)) => UnifyResult::A,
-            (TypeKind::Float(None),TypeKind::Float(Some(_))) => UnifyResult::B,
-
-            _ => panic!("todo unify kinds {:?} {:?}",a,b)
-        }
-    }
-}
-
 #[derive(Debug)]
 enum TypeConstraint {
     Equal(TypeVar,TypeVar),
-    EqualLit(TypeVar,GlobalType),
+    CoerceTo(TypeVar,GlobalType),
     Assign{src: TypeVar, dst: TypeVar},
+    DeRef{src: TypeVar, dst: TypeVar},
     OpBinary{op: OpBinary, res: TypeVar, lhs: TypeVar, rhs: TypeVar},
     OpUnary{op: OpUnary, res: TypeVar, arg: TypeVar},
     CheckBlockNever{var: TypeVar, expr_id: u32},
@@ -114,7 +56,7 @@ impl TypeConstraint {
     // used for conditions and &&/|| args.
     // todo possibly allow never?
     fn bool(var: TypeVar) -> Self {
-        TypeConstraint::EqualLit(var,GlobalType::simple(TypeKind::Bool))
+        TypeConstraint::CoerceTo(var,GlobalType::simple(TypeKind::Bool))
     }
     // todo same for void?
 }
@@ -230,7 +172,7 @@ impl FuncTypes {
         }
 
         let main_var = types.init_expr(func, func.root_expr as u32);
-        types.add_constraint(TypeConstraint::EqualLit(main_var, func.ret_ty.clone()));
+        types.add_constraint(TypeConstraint::CoerceTo(main_var, func.ret_ty.clone()));
 
         types
     }
@@ -245,6 +187,13 @@ impl FuncTypes {
 
         let expr = &func.exprs[expr_id as usize].expr;
         let result = match expr {
+            Expr::StmtTmp(arg,_) => {
+                self.init_expr(func,*arg)
+            }
+            Expr::DeclTmp(_) => {
+                // no-op
+                TYPE_VOID
+            }
             Expr::DeclVar(_) => {
                 // no-op
                 TYPE_VOID
@@ -439,7 +388,7 @@ impl FuncTypes {
 
                 for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
                     let var = self.init_expr(func,*arg);
-                    self.add_constraint(TypeConstraint::EqualLit(var,ty.clone()));
+                    self.add_constraint(TypeConstraint::CoerceTo(var,ty.clone()));
                 }
 
                 self.new_var_from_global(&sig.output)
@@ -451,7 +400,7 @@ impl FuncTypes {
 
                 for (arg,ty) in args.iter().zip(sig.inputs.iter()) {
                     let var = self.init_expr(func,*arg);
-                    self.add_constraint(TypeConstraint::EqualLit(var,ty.clone()));
+                    self.add_constraint(TypeConstraint::CoerceTo(var,ty.clone()));
                 }
 
                 self.new_var_from_global(&sig.output)
@@ -464,7 +413,7 @@ impl FuncTypes {
                 };
 
                 // todo coerce?
-                self.add_constraint(TypeConstraint::EqualLit(ret_var,func.ret_ty.clone()));
+                self.add_constraint(TypeConstraint::CoerceTo(ret_var,func.ret_ty.clone()));
 
                 self.new_var(TypeKind::Never)
             }
@@ -472,6 +421,12 @@ impl FuncTypes {
                 let ref_ty = self.init_expr(func,*ref_expr);
 
                 self.new_var_with_args(TypeKind::Ref(*is_mut),vec!(ref_ty))
+            }
+            Expr::DeRef(ref_expr) => {
+                let src = self.init_expr(func,*ref_expr);
+                let dst = self.new_var(TypeKind::Unknown);
+                self.add_constraint(TypeConstraint::DeRef{src,dst});
+                dst
             }
             _ => {
                 println!("todo setup types: {:?}",expr);
@@ -497,9 +452,13 @@ impl FuncTypes {
     }
 
     fn new_var_from_global(&mut self, source: &GlobalType) -> TypeVar {
+        let args: Vec<TypeVar> = source.args.iter().map(|arg| {
+            self.new_var_from_global(arg)
+        }).collect();
+
         let res = TypeVar(self.var_types.len() as u32);
-        assert_eq!(source.args.len(), 0);
-        self.var_types.push(LocalType { kind: source.kind.clone(), args: vec!() });
+        self.var_types.push(LocalType { kind: source.kind.clone(), args });
+
         res
     }
 
@@ -512,20 +471,21 @@ impl FuncTypes {
         for c in constraints {
             let sat = match &c {
                 TypeConstraint::Equal(var1, var2) => self.solve_equal(*var1,*var2),
-                TypeConstraint::EqualLit(var, ty) => {
-
-                    let lt = &mut self.var_types[var.0 as usize];
-
-                    if lt.kind == TypeKind::Never {
-                        // dumb hack -- todo probably replace this constraint entirely with some coerceto constraint
-                        true
+                TypeConstraint::CoerceTo(var,ty) => self.solve_coerce_to(*var,&ty.clone()),
+                TypeConstraint::Assign { src, dst } => self.solve_assign(*src,*dst),
+                TypeConstraint::DeRef { src, dst } => {
+                    // todo std ops deref / derefmut
+                    if self.check_known_strict(*src) {
+                        if let TypeKind::Ref(_) = self.get(*src).kind {
+                            let ref_var = self.get(*src).args[0];
+                            self.solve_equal(ref_var, *dst)
+                        } else {
+                            false
+                        }
                     } else {
-                        lt.unify_g(&ty);
-                
-                        lt.kind.is_known_strict()
+                        false
                     }
                 }
-                TypeConstraint::Assign { src, dst } => self.solve_assign(*src,*dst),
                 TypeConstraint::OpUnary{ op, res, arg } => self.solve_unary(*op,*res,*arg),
                 TypeConstraint::OpBinary { op, res, lhs, rhs } => self.solve_binary(*op,*res,*lhs,*rhs),
                 TypeConstraint::CheckBlockNever{ var, expr_id } => self.solve_block_never(func, *var, *expr_id),
@@ -549,6 +509,10 @@ impl FuncTypes {
                         self.var_types[dst.0 as usize].kind = TypeKind::Never;
                         return;
                     }
+                }
+                TypeConstraint::CoerceTo( a, b) => {
+                    self.solve_equal_g(*a,&b.clone());
+                    return;
                 }
                 _ => ()
             }
@@ -578,8 +542,10 @@ impl FuncTypes {
     fn get_global(&self, var: TypeVar) -> GlobalType {
         let var = var.0 as usize;
         let ty = &self.var_types[var];
-        assert_eq!(ty.args.len(),0);
-        GlobalType::simple(ty.kind.clone())
+        let args: Vec<GlobalType> = ty.args.iter().map(|arg_var| {
+            self.get_global(*arg_var)
+        }).collect();
+        GlobalType::with_args(ty.kind.clone(),&args)
     }
 
     fn solve_equal(&mut self, var1: TypeVar, var2: TypeVar) -> bool {
@@ -588,13 +554,72 @@ impl FuncTypes {
             //return self.get(var1).kind.is_known_strict();
         }
 
-        let (t1,t2) = self.get_mut_2(var1, var2);
+        let (a,b) = self.get_mut_2(var1, var2);
 
-        if t1 != t2 {
-            t1.unify(t2);
+        let unify_res = unify_kind(&a.kind, &b.kind);
+
+        let (src,dst) = match unify_res {
+            UnifyResult::A => {
+                (a,b)
+            }
+            UnifyResult::B => {
+                (b,a)
+            }
+        };
+
+        let dst_is_unk = dst.kind == TypeKind::Unknown;
+        if dst_is_unk {
+            dst.args = src.args.clone();
         }
 
-        t1.kind.is_known_strict()
+        dst.kind = src.kind.clone();
+
+        if src.args.len() > 0 && !dst_is_unk {
+            assert_eq!(src.args.len(),dst.args.len());
+            // yucky clones
+            let args1 = src.args.clone();
+            let args2 = dst.args.clone();
+            for (a1,a2) in args1.iter().zip(args2.iter()) {
+                self.solve_equal(*a1, *a2);
+            }
+            // use only one set of arguments
+            {
+                let (a,b) = self.get_mut_2(var1, var2);
+                a.args = b.args.clone();
+            }
+        }
+
+        self.check_known_strict(var1)
+    }
+
+    fn solve_coerce_to(&mut self, var: TypeVar, ty: &GlobalType) -> bool {
+        let src = &mut self.var_types[var.0 as usize];
+
+        if src.kind == TypeKind::Never {
+            // never can coerce to anything
+            true
+        } else if src.kind.cannot_coerce() {
+            // source cannot be coerced, it must equal ty
+            self.solve_equal_g(var,ty)
+        } else {
+            // not sure what to do
+            false
+        }
+    }
+
+    fn solve_equal_g(&mut self, var: TypeVar, ty: &GlobalType) -> bool {
+        let src = &mut self.var_types[var.0 as usize];
+
+        let unify_res = unify_kind(&src.kind, &ty.kind);
+        match unify_res {
+            UnifyResult::A => (),
+            UnifyResult::B => src.kind = ty.kind.clone()
+        }
+
+        assert_eq!(src.args.len(),ty.args.len());
+        assert_eq!(ty.args.len(),0);
+
+        self.check_known_strict(var)
     }
 
     fn solve_assign(&mut self, src_var: TypeVar, dst_var: TypeVar) -> bool {
@@ -726,11 +751,14 @@ impl FuncTypes {
                 Some(false) => ()
             }
         }
-        let goal_ty = GlobalType::simple(if is_never { TypeKind::Never } else { TypeKind::Tuple });
+        let goal_kind = if is_never { TypeKind::Never } else { TypeKind::Tuple };
 
         let current_ty = &mut self.var_types[var.0 as usize];
 
-        current_ty.unify_g(&goal_ty);
+        if current_ty.kind != TypeKind::Unknown {
+            panic!("block already has type");
+        }
+        current_ty.kind = goal_kind;
 
         return true;
     }
@@ -740,7 +768,9 @@ impl FuncTypes {
         match expr {
 
             // check children
-            Expr::UnOp(arg,_) => {
+            Expr::UnOp(arg,_) |
+            Expr::Ref(arg,_) |
+            Expr::DeRef(arg) => {
                 self.check_expr_is_never(func, *arg)
             }
             Expr::Assign(a,b) |
@@ -783,7 +813,7 @@ impl FuncTypes {
 
             // never diverge
             Expr::While(..) | // <- looks like the cond can just be ignored
-            Expr::DeclVar(_) | Expr::Var(..) | Expr::CastPrimitive(..) |
+            Expr::DeclVar(_) | Expr::Var(..) | Expr::CastPrimitive(..) | Expr::DeclTmp(_) |
             Expr::LitInt(..) | Expr::LitFloat(..) | Expr::LitBool(_) | Expr::LitChar(_) | Expr::LitVoid => Some(false),
 
             // always diverge
@@ -797,12 +827,30 @@ impl FuncTypes {
         // check if this type or any fields or arguments contain unknown or never
         // for these purposes, unknown int and float vars do not count as unknown
         let ty = self.get(var);
-        assert_eq!(ty.args.len(),0);
+        for arg in &ty.args {
+            let res = self.check_ty_never(*arg)?;
+            if res {
+                return Some(true);
+            }
+        }
         match ty.kind {
             TypeKind::Never => Some(true),
             TypeKind::Unknown => None,
             _ => Some(false)
         }
+    }
+
+    fn check_known_strict(&self, var: TypeVar) -> bool {
+        let ty = self.get(var);
+        if !ty.kind.is_known_strict() {
+            return false;
+        }
+        for arg in &ty.args {
+            if !self.check_known_strict(*arg) {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn fix_unknown_primitives(&mut self) {

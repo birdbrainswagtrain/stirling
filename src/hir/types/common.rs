@@ -1,4 +1,4 @@
-#[derive(Debug,Clone,Copy,PartialEq)]
+#[derive(Debug,Clone,Copy,Hash,PartialEq,Eq)]
 pub enum IntWidth {
     Int8,
     Int16,
@@ -8,19 +8,19 @@ pub enum IntWidth {
     IntSize
 }
 
-#[derive(Debug,Clone,Copy,PartialEq)]
+#[derive(Debug,Clone,Copy,Hash,PartialEq,Eq)]
 pub enum FloatWidth {
     Float32,
     Float64
 }
 
-#[derive(Debug,Clone,Copy,PartialEq)]
+#[derive(Debug,Clone,Copy,Hash,PartialEq,Eq)]
 pub enum IntSign {
     Signed,
     Unsigned
 }
 
-#[derive(Debug,Clone,PartialEq)]
+#[derive(Debug,Clone,Hash,PartialEq,Eq)]
 pub enum TypeKind {
     Unknown,
     Never,
@@ -47,7 +47,7 @@ impl TypeKind {
     pub fn cannot_coerce(&self) -> bool {
         match self {
             // this should maybe be a blacklist, but use a whitelist for now
-            TypeKind::Int(_) => true,
+            TypeKind::Int(_) | TypeKind::Float(_) => true,
             _ => false
         }
     }

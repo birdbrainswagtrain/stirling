@@ -18,7 +18,7 @@ static TYPE_REGISTRY: Lazy<RwLock<TypeRegistry>> = Lazy::new(|| {
     })
 });
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,Hash,PartialEq,Eq)]
 pub struct GlobalType {
     pub kind: TypeKind,
     pub args: Arc<[GlobalType]>
@@ -27,6 +27,18 @@ pub struct GlobalType {
 impl GlobalType {
     pub fn simple(kind: TypeKind) -> Self {
         let args = TYPE_REGISTRY.read().unwrap().empty.clone();
+        GlobalType{kind, args}
+    }
+
+    pub fn with_args(kind: TypeKind, args: &[GlobalType]) -> Self {
+        let mut registry = TYPE_REGISTRY.write().unwrap();
+        let args = if let Some(res) = registry.lookup.get(args) {
+            res.clone()
+        } else {
+            let args: Arc<[GlobalType]> = args.to_owned().into_boxed_slice().into();
+            registry.lookup.insert(args.clone());
+            args
+        };
         GlobalType{kind, args}
     }
 
@@ -42,8 +54,7 @@ impl GlobalType {
             syn::Type::Reference(tr) => {
                 let is_mut = tr.mutability.is_some();
                 let inner = GlobalType::from_syn(&tr.elem, scope);
-                //return Type::from_compound(CompoundType::Ref(inner, is_mut));
-                panic!()
+                return GlobalType::with_args(TypeKind::Ref(is_mut),&[inner]);
             }
             syn::Type::Ptr(tp) => {
                 let is_mut = tp.mutability.is_some();
@@ -111,6 +122,7 @@ impl GlobalType {
                 assert!(self.args.len()==0);
                 0
             },
+            TypeKind::Ref(_) => 8,
             _ => panic!("todo size {:?}",self.kind)
         }
     }
@@ -135,6 +147,7 @@ impl GlobalType {
                 assert!(self.args.len()==0);
                 1
             },
+            TypeKind::Ref(_) => 8,
             _ => panic!("todo align {:?}",self.kind)
         }
     }
